@@ -8,6 +8,7 @@ From a source checkout use `pcagent run` instead.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import os
 import shutil
@@ -16,6 +17,7 @@ import sys
 import threading
 from pathlib import Path
 
+import psutil
 import pywintypes
 import servicemanager
 import win32service
@@ -154,17 +156,54 @@ def harden_data_dir(paths: Paths) -> None:
         raise ServiceError(f"icacls: {result.stdout.strip() or result.stderr.strip()}")
 
 
+def _stop_installed_processes(target: Path) -> None:
+    """Kill processes started from `target` (the helpers in user sessions).
+
+    After the service stops, its helpers keep running for up to ~15 s and keep
+    pcagent.exe locked, so the files could not be replaced or deleted.
+    """
+    if not target.exists():
+        return
+    target = target.resolve()
+    procs = []
+    for proc in psutil.process_iter(["exe"]):
+        exe = proc.info["exe"]
+        if proc.pid != os.getpid() and exe and Path(exe).resolve().is_relative_to(target):
+            procs.append(proc)
+    for proc in procs:
+        with contextlib.suppress(psutil.Error):
+            proc.kill()
+    psutil.wait_procs(procs, timeout=10)
+
+
 def _copy_build(target: Path) -> Path:
-    """Copy the one-folder build next to sys.executable into `target`."""
+    """Copy the one-folder build next to sys.executable into `target`.
+
+    The new files are copied to a staging folder first and swapped in with
+    renames, so a failure never leaves `target` half-deleted.
+    """
     source = Path(sys.executable).resolve().parent
+    exe_name = Path(sys.executable).name
     if source == target.resolve():
-        return target / Path(sys.executable).name
+        return target / exe_name
+    if target.exists() and not (target / "pcagent.exe").exists():
+        raise ServiceError(f"{target} существует, но это не папка агента; удалите её вручную.")
+    staging = target.with_name(target.name + ".new")
+    backup = target.with_name(target.name + ".old")
+    for leftover in (staging, backup):
+        if leftover.exists():
+            shutil.rmtree(leftover)
+    shutil.copytree(source, staging)
     if target.exists():
-        if not (target / "pcagent.exe").exists():
-            raise ServiceError(f"{target} существует, но это не папка агента; удалите её вручную.")
-        shutil.rmtree(target)
-    shutil.copytree(source, target)
-    return target / Path(sys.executable).name
+        target.rename(backup)
+    try:
+        staging.rename(target)
+    except OSError:
+        if backup.exists():
+            backup.rename(target)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+    return target / exe_name
 
 
 # ---------- commands ----------
@@ -177,8 +216,19 @@ def install() -> None:
     paths = Paths(default_data_dir())
     existed = _state() is not None
     _stop_if_running()
+    _stop_installed_processes(install_dir())
 
-    exe = _copy_build(install_dir())
+    try:
+        exe = _copy_build(install_dir())
+    except (OSError, ServiceError) as exc:
+        restarted = False
+        if existed:
+            # Never leave the computer without control because an upgrade failed.
+            with contextlib.suppress(Exception):
+                _start()
+                restarted = True
+        note = " Прежняя версия снова запущена." if restarted else ""
+        raise ServiceError(f"Не удалось скопировать файлы агента: {exc}.{note}") from exc
     print(f"Файлы агента: {exe.parent}")
     harden_data_dir(paths)
     print(f"Данные агента (только чтение для пользователей): {paths.data_dir}")
@@ -216,6 +266,7 @@ def remove() -> None:
         return
     _stop_if_running()
     win32serviceutil.RemoveService(SERVICE_NAME)
+    _stop_installed_processes(install_dir())
     print(f"Служба {SERVICE_NAME} удалена.")
     print(f"Файлы остались в {install_dir()} и {default_data_dir()}, их можно удалить вручную.")
 

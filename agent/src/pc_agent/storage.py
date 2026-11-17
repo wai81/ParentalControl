@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS events (
     data   TEXT    NOT NULL DEFAULT '{}',
     synced INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS app_usage (
+    day     TEXT NOT NULL,
+    app     TEXT NOT NULL,
+    seconds REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, app)
+);
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 CREATE INDEX IF NOT EXISTS events_unsynced ON events (synced) WHERE synced = 0;
 """
@@ -99,6 +105,22 @@ class Store:
             "SELECT day, used_seconds FROM day_usage ORDER BY day DESC LIMIT ?", (days,)
         ).fetchall()
         return [(date.fromisoformat(d), used / 60) for d, used in rows]
+
+    # ---------- time per application ----------
+
+    def add_app_usage(self, day: date, app: str, seconds: float) -> None:
+        self._conn.execute(
+            "INSERT INTO app_usage (day, app, seconds) VALUES (?, ?, ?) "
+            "ON CONFLICT (day, app) DO UPDATE SET seconds = seconds + excluded.seconds",
+            (day.isoformat(), app.lower(), seconds),
+        )
+
+    def app_usage(self, day: date, limit: int = 20) -> list[tuple[str, float]]:
+        rows = self._conn.execute(
+            "SELECT app, seconds FROM app_usage WHERE day = ? ORDER BY seconds DESC LIMIT ?",
+            (day.isoformat(), limit),
+        ).fetchall()
+        return [(app, seconds / 60) for app, seconds in rows]
 
     # ---------- activity log ----------
 

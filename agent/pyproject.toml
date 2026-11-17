@@ -5,7 +5,9 @@ description = "Parental control agent for Windows (time limits, app control, act
 requires-python = ">=3.12"
 dependencies = [
     "pc-shared",
+    "pillow>=13.0.0",
     "psutil>=6.0",
+    "pystray>=0.19.5",
     "pywin32>=308; sys_platform == 'win32'",
 ]
 

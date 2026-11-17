@@ -38,7 +38,7 @@ try {
     $script:began = $true
 
     Step 'install'
-    & $buildExe service install
+    & $buildExe service install | Out-Host
     $svc = Wait-Running
     Check ($svc.State -eq 'Running') "service running (state: $($svc.State))"
     Check ($svc.StartName -eq 'LocalSystem') "runs as SYSTEM ($($svc.StartName))"
@@ -55,6 +55,32 @@ try {
     $events
     Check (($events -join "`n") -match 'agent_started') 'agent_started event recorded'
 
+    Step 'helper in the user session'
+    # Rules for the current user with a whole-day window and a 24 h limit: nothing is restricted.
+    $day = @{ limit_minutes = 1440; window = @{ start = '00:00'; end = '24:00' } }
+    $rules = @{ child_user = $env:USERNAME; weekdays = $day; weekends = $day } | ConvertTo-Json -Depth 5
+    [IO.File]::WriteAllText((Join-Path $data 'rules.json'), $rules, (New-Object Text.UTF8Encoding $false))
+    function Get-Helper([int]$NotId = 0) {
+        Get-Process pcagent -IncludeUserName -ErrorAction SilentlyContinue |
+            Where-Object { $_.SessionId -ne 0 -and $_.Id -ne $NotId } | Select-Object -First 1
+    }
+    $helper = $null
+    for ($i = 0; $i -lt 20 -and -not $helper; $i++) { Start-Sleep -Seconds 1; $helper = Get-Helper }
+    Check ($null -ne $helper) "helper running in session $($helper.SessionId)"
+    Check ($helper.UserName -like "*\$env:USERNAME") "helper runs as the user ($($helper.UserName))"
+    Start-Sleep -Seconds 5
+    $agentLog = Get-Content (Join-Path $data 'agent.log') -Encoding UTF8 -Raw
+    Check ($agentLog -match 'Helper подключился') 'helper connected to the service pipe'
+    & $installed status | Select-Object -Last 4
+
+    Step 'helper restarted after it is killed'
+    Stop-Process -Id $helper.Id -Force
+    $helper2 = $null
+    for ($i = 0; $i -lt 25 -and -not $helper2; $i++) { Start-Sleep -Seconds 1; $helper2 = Get-Helper $helper.Id }
+    Check ($null -ne $helper2) "new helper started ($($helper.Id) -> $($helper2.Id))"
+    $events = & $installed events -n 30
+    Check (($events -join "`n") -match 'helper_stopped') 'helper_stopped event recorded'
+
     Step 'data folder permissions'
     $acl = icacls $data
     $acl
@@ -70,18 +96,18 @@ try {
     Check ($svc.State -eq 'Running' -and $svc.ProcessId -ne $pid1) "restarted (pid $pid1 -> $($svc.ProcessId))"
 
     Step 'stop / start via CLI'
-    & $installed service stop
+    & $installed service stop | Out-Host
     Check ((Get-Svc).State -eq 'Stopped') 'stopped'
-    & $installed service start
+    & $installed service start | Out-Host
     Check ((Wait-Running).State -eq 'Running') 'started again'
     Check ((Get-Content (Join-Path $data 'agent.log') -Encoding UTF8 -Raw) -match 'остановлен') 'clean stop logged'
 
     Step 'upgrade (install over existing)'
-    & $buildExe service install
+    & $buildExe service install | Out-Host
     Check ((Wait-Running).State -eq 'Running') 'running after upgrade'
 
     Step 'remove'
-    & $buildExe service remove
+    & $buildExe service remove | Out-Host
     Check (-not (Get-Svc)) 'service removed'
 }
 catch {
@@ -91,7 +117,9 @@ catch {
 finally {
     Step 'cleanup'
     if (-not $script:began) { Write-Host 'nothing to clean up' }
-    elseif (Get-Svc) { & $buildExe service remove }
+    elseif (Get-Svc) { & $buildExe service remove | Out-Host }
+    # The helper exits by itself ~15 s after the service is gone; do not wait for it.
+    if ($script:began) { Get-Process pcagent -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1 }
     if ($script:began) { foreach ($dir in @((Split-Path -Parent $installed), $data)) {
         if (Test-Path $dir) { Remove-Item $dir -Recurse -Force; Write-Host "removed $dir" }
     } }

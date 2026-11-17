@@ -45,7 +45,7 @@ def test_weekend_uses_weekend_rules():
 def test_outside_window_is_denied():
     d = evaluate(rules(), state(), at(MONDAY, "07:59"))
     assert not d.allowed
-    assert "08:00–21:00" in d.reason
+    assert "08:00-21:00" in d.reason
     assert not evaluate(rules(), state(), at(MONDAY, "21:00")).allowed
 
 

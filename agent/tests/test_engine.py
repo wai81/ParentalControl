@@ -22,6 +22,18 @@ class FakePlatform:
         self.notes: list[str] = []
         self.logoffs: list[int] = []
         self.locks: list[int] = []
+        self.helper_starts: list[int] = []
+        self.helper_running = True
+        self.next_helper_pid = 500
+
+    def start_helper(self, session_id):
+        self.next_helper_pid += 1
+        self.helper_starts.append(self.next_helper_pid)
+        self.helper_running = True
+        return self.next_helper_pid
+
+    def helper_alive(self, pid):
+        return self.helper_running
 
     def find_user_session(self, user):
         return self.session
@@ -174,3 +186,116 @@ def test_broken_rules_keep_previous(env):
 ])
 def test_is_blocked(name, expected):
     assert is_blocked(name, ["roblox*"]) is expected
+
+
+# ---------- helper: idle, app time, focus log, supervision ----------
+
+from pc_agent.activity import Activity, ActivityHub  # noqa: E402
+
+
+@pytest.fixture
+def hub_env(tmp_path):
+    rules_path = tmp_path / "rules.json"
+    save_rules(rules_path, Rules(
+        child_user="kid",
+        weekdays=DayRules(limit_minutes=60, window=Window(start="08:00", end="21:00")),
+        idle_minutes=3,
+    ))
+    store = Store(tmp_path / "agent.db")
+    platform = FakePlatform()
+    hub = ActivityHub()
+    agent = Agent(platform, store, RulesFile(rules_path), hub)
+    yield agent, platform, store, hub
+    store.close()
+
+
+def report(hub, mono, app="game.exe", title="Game", idle=0.0):
+    hub.push(Activity(idle_seconds=idle, app=app, title=title, received=mono))
+
+
+def test_idle_time_is_not_counted(hub_env):
+    agent, platform, store, hub = hub_env
+    report(hub, 0)
+    agent.tick(NOON, 0)
+    report(hub, 5, idle=10)
+    agent.tick(NOON, 5)
+    report(hub, 10, idle=200)  # over 3 minutes without input
+    result = agent.tick(NOON, 10)
+    assert result.idle
+    assert store.load_day(MONDAY).used_seconds == pytest.approx(5)
+    assert hub.status()["idle"] is True
+
+
+def test_stale_report_means_present(hub_env):
+    agent, platform, store, hub = hub_env
+    report(hub, 0, idle=999)
+    agent.tick(NOON, 0)
+    agent.tick(NOON, 20)  # report is 20 s old: ignored, time is counted
+    assert store.load_day(MONDAY).used_seconds == pytest.approx(20)
+
+
+def test_app_usage_and_focus_log(hub_env):
+    agent, platform, store, hub = hub_env
+    agent.tick(NOON, -1)  # starts the helper; reports before that are discarded
+    report(hub, 0, app="chrome.exe", title="YouTube")
+    agent.tick(NOON, 0)
+    report(hub, 5, app="chrome.exe", title="YouTube")
+    agent.tick(NOON, 5)
+    report(hub, 10, app="Minecraft.exe", title="Minecraft")
+    agent.tick(NOON, 10)
+    report(hub, 11, app="explorer.exe", title="flicker")
+    agent.tick(NOON, 11)
+    report(hub, 12, app="Minecraft.exe", title="Minecraft")
+    agent.tick(NOON, 12)
+    report(hub, 15, app="Minecraft.exe", title="Minecraft")
+    agent.tick(NOON, 15)
+
+    usage = dict(store.app_usage(MONDAY))
+    assert usage["chrome.exe"] == pytest.approx(10 / 60)
+    assert usage["minecraft.exe"] == pytest.approx(4 / 60)
+    assert usage["explorer.exe"] == pytest.approx(1 / 60)
+    focus = [e.data for e in store.recent_events(100) if e.kind == EventKind.WINDOW_FOCUS]
+    assert focus == [{"app": "chrome.exe", "title": "YouTube", "seconds": 10}]  # flicker skipped
+
+
+def test_status_published_for_tray(hub_env):
+    agent, platform, store, hub = hub_env
+    store.add_usage(MONDAY, 50 * 60)
+    agent.tick(NOON, 0)
+    status = hub.status()
+    assert status["known"] and status["allowed"]
+    assert status["remaining_minutes"] == pytest.approx(10)
+
+
+def test_helper_restarted_after_kill(hub_env):
+    agent, platform, store, hub = hub_env
+    agent.tick(NOON, 0)
+    assert platform.helper_starts == [501]
+    platform.helper_running = False
+    agent.tick(NOON, 5)  # noticed, but restart is rate-limited
+    agent.tick(NOON, 11)
+    assert platform.helper_starts == [501, 502]
+    events = kinds(store)
+    assert events.count(EventKind.HELPER_STARTED) == 2
+    assert EventKind.HELPER_STOPPED in events
+
+
+def test_new_session_starts_new_helper(hub_env):
+    agent, platform, store, hub = hub_env
+    agent.tick(NOON, 0)
+    platform.session = 3
+    agent.tick(NOON, 1)
+    assert platform.helper_starts == [501, 502]
+
+
+def test_hub_accepts_only_expected_process():
+    import os
+
+    hub = ActivityHub()
+    assert not hub.accepts(os.getpid())
+    hub.set_expected_pid(os.getpid())
+    assert hub.accepts(os.getpid())
+    hub.set_expected_pid(os.getppid())  # we are a child of the expected process
+    assert hub.accepts(os.getpid())
+    hub.set_expected_pid(999_999)
+    assert not hub.accepts(os.getpid())

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -49,6 +51,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     with Store(paths.db) as store:
         state = store.load_day(now.date())
         history = store.history(8)
+        apps = store.app_usage(now.date(), limit=10)
     d = evaluate(rules, state, now)
     print(f"Ребёнок:            {rules.child_user or '(не задан)'}")
     print(f"Разрешённые часы:   {d.window}")
@@ -59,6 +62,11 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Сейчас можно:       {'да' if d.allowed else 'нет — ' + (d.reason or '')}")
     if rules.blocked_apps:
         print(f"Запрещённые программы: {', '.join(rules.blocked_apps)}")
+    if apps:
+        print()
+        print("Программы сегодня:")
+        for app, minutes in apps:
+            print(f"  {minutes:5.0f} мин  {app}")
     past = [(day, used) for day, used in history if day != now.date()]
     if past:
         print("\nПоследние дни:")
@@ -98,6 +106,12 @@ def cmd_check_rules(args: argparse.Namespace) -> int:
         return 1
     print(rules.model_dump_json(indent=2))
     return 0
+
+
+def cmd_helper(args: argparse.Namespace) -> int:
+    from pc_agent.helper import run_helper
+
+    return run_helper(tray=not args.no_tray)
 
 
 def cmd_service(args: argparse.Namespace) -> int:
@@ -145,16 +159,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-n", type=int, default=50)
     p.set_defaults(func=cmd_events)
 
+    p = sub.add_parser("helper", help="(служебная) помощник в сеансе ребёнка, запускает служба")
+    p.add_argument("--no-tray", action="store_true", help="без значка в трее")
+    p.set_defaults(func=cmd_helper)
+
     p = sub.add_parser("service", help="управление службой Windows (нужны права администратора)")
     p.add_argument("action", choices=["install", "remove", "start", "stop", "restart", "status"])
     p.set_defaults(func=cmd_service)
     return parser
 
 
-def _utf8_output() -> None:
+def _configure_output() -> None:
+    """Make Cyrillic readable wherever the output goes.
+
+    A real console needs nothing: Python writes Unicode to it directly. When the
+    output is piped (e.g. `pcagent status | more` in PowerShell), the reader
+    decodes it with the console code page (cp866 in a Russian Windows), so use
+    that one. Without a console, use UTF-8. PYTHONIOENCODING overrides all this.
+    """
+    if os.environ.get("PYTHONIOENCODING"):
+        return
+    code_page = ctypes.windll.kernel32.GetConsoleOutputCP() if sys.platform == "win32" else 0
+    encoding = f"cp{code_page}" if code_page else "utf-8"
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
+        if stream is None or not hasattr(stream, "reconfigure") or stream.isatty():
+            continue
+        stream.reconfigure(encoding=encoding, errors="replace")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -165,13 +195,13 @@ def main(argv: list[str] | None = None) -> int:
         if run_dispatcher():
             return 0
         # Started by a person (double-click), not by the Service Control Manager.
-        _utf8_output()
+        _configure_output()
         build_parser().print_help()
         print()
         with contextlib.suppress(EOFError):
             input("Нажмите Enter, чтобы закрыть окно...")
         return 0
-    _utf8_output()
+    _configure_output()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

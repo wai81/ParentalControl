@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from pc_agent.activity import Activity, ActivityHub
 from pc_agent.policy import Decision, evaluate
 from pc_agent.rules_file import RulesFile
 from pc_agent.storage import Store
@@ -25,6 +26,10 @@ NOTIFY_TITLE = "Родительский контроль"
 GRACE_SECONDS = 60.0
 # A larger gap between ticks means sleep/hibernation or a hang: do not count it as usage.
 MAX_TICK_GAP_SECONDS = 30.0
+# Do not restart a crashing helper more often than this.
+HELPER_RESTART_SECONDS = 10.0
+# Window focus shorter than this (alt-tab flicker) is not logged.
+MIN_FOCUS_LOG_SECONDS = 2.0
 
 # System helpers running in every user session: not interesting in the activity log.
 NOISE_PROCESSES = frozenset(
@@ -62,6 +67,8 @@ class Platform(Protocol):
     def notify(self, session_id: int, title: str, text: str) -> None: ...
     def logoff(self, session_id: int) -> bool: ...
     def lock(self, session_id: int) -> bool: ...
+    def start_helper(self, session_id: int) -> int | None: ...
+    def helper_alive(self, pid: int) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,8 @@ class TickResult:
     session_id: int | None
     active: bool
     decision: Decision | None
+    idle: bool = False
+    app: str | None = None
 
 
 def is_blocked(name: str, patterns: list[str]) -> bool:
@@ -77,10 +86,21 @@ def is_blocked(name: str, patterns: list[str]) -> bool:
 
 
 class Agent:
-    def __init__(self, platform: Platform, store: Store, rules: RulesFile) -> None:
+    def __init__(
+        self,
+        platform: Platform,
+        store: Store,
+        rules: RulesFile,
+        hub: ActivityHub | None = None,
+    ) -> None:
         self._platform = platform
         self._store = store
         self._rules = rules
+        self._hub = hub
+        self._helper_pid: int | None = None
+        self._helper_started_at: float | None = None
+        self._focus: tuple[str, str] | None = None
+        self._focus_since = 0.0
         self._prev_mono: float | None = None
         self._session_id: int | None = None
         self._known: dict[tuple[int, float], ProcInfo] = {}
@@ -116,10 +136,28 @@ class Agent:
 
         self._scan_processes(session_id, rules, mono)
 
+        activity: Activity | None = None
+        if self._hub is not None:
+            self._ensure_helper(session_id, mono)
+            activity = self._hub.latest(mono)
+
         active = self._platform.is_session_active(session_id)
+        # Without fresh data from the helper the child is assumed to be present.
+        idle = bool(
+            activity
+            and rules.idle_minutes
+            and activity.idle_seconds >= rules.idle_minutes * 60
+        )
+        counting = active and not idle
+        app = activity.app if activity else None
+        # The interval since the previous tick belongs to the window focused during it.
+        previous_app = self._focus[0] if self._focus else None
         today = now.date()
-        if active and elapsed > 0:
+        if counting and elapsed > 0:
             self._store.add_usage(today, elapsed)
+            if previous_app:
+                self._store.add_app_usage(today, previous_app, elapsed)
+        self._track_focus(activity if counting else None, mono)
 
         state = self._store.load_day(today)
         decision = evaluate(rules, state, now)
@@ -138,7 +176,61 @@ class Agent:
         else:
             self._enforce(session_id, rules, decision, active, mono)
 
-        return TickResult(session_id, active, decision)
+        if self._hub is not None:
+            self._hub.set_status(
+                {
+                    "allowed": decision.allowed,
+                    "reason": decision.reason,
+                    "remaining_minutes": round(decision.remaining_minutes, 1),
+                    "used_minutes": round(decision.used_minutes, 1),
+                    "limit_minutes": decision.limit_minutes,
+                    "window": decision.window,
+                    "idle": idle,
+                }
+            )
+        return TickResult(session_id, active, decision, idle=idle, app=app)
+
+    def _ensure_helper(self, session_id: int, mono: float) -> None:
+        """Keep the helper running in the child's session; restart it if it was closed."""
+        assert self._hub is not None
+        if self._helper_pid is not None:
+            if self._platform.helper_alive(self._helper_pid):
+                return
+            log.warning("Helper (процесс %s) завершился", self._helper_pid)
+            self._event(EventKind.HELPER_STOPPED, pid=self._helper_pid)
+            self._helper_pid = None
+            self._hub.set_expected_pid(None)
+        if (
+            self._helper_started_at is not None
+            and mono - self._helper_started_at < HELPER_RESTART_SECONDS
+        ):
+            return
+        self._helper_started_at = mono
+        try:
+            pid = self._platform.start_helper(session_id)
+        except Exception as exc:
+            log.exception("Не удалось запустить helper")
+            self._event(EventKind.ERROR, message=f"helper: {exc!r}")
+            return
+        if pid is None:
+            return
+        self._helper_pid = pid
+        self._hub.set_expected_pid(pid)
+        log.info("Helper запущен в сеансе %s (процесс %s)", session_id, pid)
+        self._event(EventKind.HELPER_STARTED, pid=pid, session_id=session_id)
+
+    def _track_focus(self, activity: Activity | None, mono: float) -> None:
+        """Log each window the child looked at, with how long it was in focus."""
+        current = (activity.app or "?", activity.title) if activity else None
+        if current == self._focus:
+            return
+        if self._focus is not None:
+            seconds = mono - self._focus_since
+            if seconds >= MIN_FOCUS_LOG_SECONDS:
+                app, title = self._focus
+                self._event(EventKind.WINDOW_FOCUS, app=app, title=title, seconds=round(seconds))
+        self._focus = current
+        self._focus_since = mono
 
     def _enforce(
         self, session_id: int, rules: Rules, decision: Decision, active: bool, mono: float
@@ -178,6 +270,12 @@ class Agent:
         self._known.clear()
         self._scanned = False
         self._pending_since = None
+        self._track_focus(None, self._prev_mono or 0.0)
+        # The old helper ends with the old session; start a new one right away.
+        self._helper_pid = None
+        self._helper_started_at = None
+        if self._hub is not None:
+            self._hub.set_expected_pid(None)
 
     def _scan_processes(self, session_id: int, rules: Rules, mono: float) -> None:
         first_scan = not self._scanned

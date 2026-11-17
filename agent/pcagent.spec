@@ -9,7 +9,8 @@ a = Analysis(
     [str(root / "src" / "pc_agent" / "__main__.py")],
     pathex=[str(root / "src"), str(root.parent / "shared" / "src")],
     # win32timezone is imported dynamically by pywin32 service code.
-    hiddenimports=["win32timezone"],
+    # pystray picks its Windows backend at runtime.
+    hiddenimports=["win32timezone", "pystray._win32"],
     excludes=["tkinter", "unittest", "pydoc", "test"],
     noarchive=False,
 )

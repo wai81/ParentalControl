@@ -58,7 +58,7 @@ class Window(BaseModel):
         return parse_hhmm(self.end)
 
     def __str__(self) -> str:
-        return f"{self.start}–{self.end}"
+        return f"{self.start}-{self.end}"
 
 
 class DayRules(BaseModel):
@@ -75,6 +75,8 @@ class Rules(BaseModel):
     weekdays: DayRules = DayRules(limit_minutes=120, window=Window(start="08:00", end="21:00"))
     weekends: DayRules = DayRules(limit_minutes=180, window=Window(start="09:00", end="22:00"))
     warn_at_minutes: list[int] = Field(default_factory=lambda: [10, 5, 1])
+    # No mouse/keyboard input for this long: time is not counted. 0 disables the check.
+    idle_minutes: int = Field(default=3, ge=0, le=60)
     # What to do when time is over: end the session or only return to the lock screen.
     enforcement: Literal["logoff", "lock"] = "logoff"
     # Process names, wildcards allowed: "RobloxPlayerBeta", "Minecraft*". ".exe" is optional.
