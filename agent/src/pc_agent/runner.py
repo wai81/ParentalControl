@@ -71,8 +71,10 @@ def run_agent(
     from pc_agent.activity import PIPE_NAME, ActivityHub
     from pc_agent.control import CONTROL_PIPE_NAME, ControlHandler
     from pc_agent.engine import Agent
+    from pc_agent.hardening import current_timezone
     from pc_agent.pipe_server import PipeServer, report_handler
     from pc_agent.platform_win import DryRunPlatform, WindowsPlatform
+    from pc_agent.sync import SyncWorker
 
     paths.data_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(paths, console)
@@ -94,6 +96,7 @@ def run_agent(
         ]
         for server in servers:
             server.start()
+        SyncWorker(paths.data_dir, hub, stop, timezone=current_timezone).start()
         agent = Agent(platform, store, rules, hub)
 
         log.info("Агент запущен (данные: %s, dry-run: %s)", paths.data_dir, dry_run)

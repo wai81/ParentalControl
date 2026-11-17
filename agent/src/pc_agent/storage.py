@@ -158,6 +158,20 @@ class Store:
             (event.ts.isoformat(), event.kind.value, json.dumps(event.data, ensure_ascii=False)),
         )
 
+    def unsynced_events(self, limit: int = 500) -> list[tuple[int, Event]]:
+        """Oldest log entries not yet sent to the server, with their local ids."""
+        rows = self._conn.execute(
+            "SELECT id, ts, kind, data FROM events WHERE synced = 0 ORDER BY id LIMIT ?", (limit,)
+        ).fetchall()
+        return [
+            (row_id, Event(ts=datetime.fromisoformat(ts), kind=EventKind(kind),
+                           data=json.loads(data)))
+            for row_id, ts, kind, data in rows
+        ]
+
+    def mark_synced(self, ids: list[int]) -> None:
+        self._conn.executemany("UPDATE events SET synced = 1 WHERE id = ?", [(i,) for i in ids])
+
     def recent_events(self, limit: int = 50) -> list[Event]:
         rows = self._conn.execute(
             "SELECT ts, kind, data FROM events ORDER BY id DESC LIMIT ?", (limit,)

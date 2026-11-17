@@ -143,6 +143,8 @@ class Agent:
             self._session_changed()
             self._session_id = session_id
         if session_id is None:
+            if self._hub is not None:
+                self._hub.set_status({"child_logged_in": False})
             return TickResult(None, False, None)
 
         self._scan_processes(session_id, rules, mono)
@@ -197,6 +199,7 @@ class Agent:
                     "limit_minutes": decision.limit_minutes,
                     "window": decision.window,
                     "idle": idle,
+                    "child_logged_in": True,
                 }
             )
         return TickResult(session_id, active, decision, idle=idle, app=app)

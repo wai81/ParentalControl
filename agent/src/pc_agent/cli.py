@@ -162,6 +162,43 @@ def cmd_set_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def _is_admin() -> bool:
+    return sys.platform == "win32" and bool(ctypes.windll.shell32.IsUserAnAdmin())
+
+
+def cmd_connect(args: argparse.Namespace) -> int:
+    from pc_agent.sync import ServerError, connect
+
+    paths = _paths(args)
+    admin = _is_admin()
+    if args.data_dir is None and not admin:
+        print("Нужны права администратора: запустите терминал от имени администратора.")
+        return 1
+    name = args.name or os.environ.get("COMPUTERNAME", "Компьютер")
+    try:
+        reply = connect(paths.data_dir, args.server, args.code, name, restrict=admin)
+    except ServerError as exc:
+        print(f"Не удалось подключиться: {exc}")
+        return 1
+    print(f"Компьютер подключён к серверу {args.server} (устройство {reply.device_id}, "
+          f"'{name}').")
+    print("Служба начнёт обмен данными в течение минуты. Правила теперь меняются в веб-панели.")
+    if args.server.lower().startswith("http://"):
+        print("Внимание: соединение без шифрования (http). Это допустимо только в домашней сети "
+              "или через VPN (например, Tailscale). Через интернет используйте https.")
+    return 0
+
+
+def cmd_disconnect(args: argparse.Namespace) -> int:
+    from pc_agent.sync import disconnect
+
+    if disconnect(_paths(args).data_dir):
+        print("Компьютер отключён от сервера. Контроль продолжает работать по последним правилам.")
+    else:
+        print("Компьютер не был подключён к серверу.")
+    return 0
+
+
 def cmd_parent(args: argparse.Namespace) -> int:
     from pc_agent.dialog import run_dialog
 
@@ -246,6 +283,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_set_password)
     sub.add_parser("parent", help="окно родителя: добавить время, заблокировать").set_defaults(
         func=cmd_parent)
+
+    p = sub.add_parser("connect", help="подключить к серверу родителя (от имени администратора)")
+    p.add_argument("--server", required=True, help="адрес сервера, например http://192.168.1.10:8000")
+    p.add_argument("--code", required=True, help="код подключения из веб-панели")
+    p.add_argument("--name", help="название компьютера в веб-панели")
+    p.set_defaults(func=cmd_connect)
+    sub.add_parser("disconnect", help="отключить от сервера").set_defaults(func=cmd_disconnect)
 
     p = sub.add_parser("events", help="журнал событий")
     p.add_argument("-n", type=int, default=50)

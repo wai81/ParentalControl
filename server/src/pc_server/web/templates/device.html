@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }}{% endblock %}
+{% block content %}
+<p><a href="/">← Все компьютеры</a></p>
+<h1>{{ device.name }}</h1>
+
+<section class="card" id="status" data-url="/devices/{{ device.id }}/status">
+  {% include "_status.html" %}
+</section>
+
+<section class="card">
+  <h2>Управление</h2>
+  <div class="buttons">
+  {% for m in (15, 30, 60, -15) %}
+    <form method="post" action="/devices/{{ device.id }}/command">
+      <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="action" value="bonus"><input type="hidden" name="minutes" value="{{ m }}">
+      <button>{{ '%+d' % m }} мин</button>
+    </form>
+  {% endfor %}
+    <form method="post" action="/devices/{{ device.id }}/command">
+      <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="action" value="block">
+      <button class="danger">Заблокировать до конца дня</button>
+    </form>
+    <form method="post" action="/devices/{{ device.id }}/command">
+      <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="action" value="unblock">
+      <button>Снять блокировку</button>
+    </form>
+  </div>
+  {% if commands %}
+  <details>
+    <summary>Последние команды</summary>
+    <table>
+    {% for c in commands %}
+      <tr><td>{{ local_time(c.created_at) }}</td>
+          <td>{{ command_label(c.action) }}{% if c.minutes %} {{ '%+d' % c.minutes }} мин{% endif %}</td>
+          <td>{% if c.done_at %}{{ "выполнено" if c.ok else "ошибка" }}{% if c.result %}: {{ c.result }}{% endif %}
+              {% elif c.delivered_at %}доставлено{% else %}ждёт подключения{% endif %}</td></tr>
+    {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Программы сегодня</h2>
+  {% if apps %}
+  <table>
+    {% for a in apps %}<tr><td>{{ a.app }}</td><td class="num">{{ minutes(a.minutes) }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="muted">Пока нет данных.</p>{% endif %}
+  {% if history %}
+  <h3>По дням</h3>
+  <table>
+    {% for d in history %}
+    <tr><td>{{ d.day.strftime("%d.%m") }}</td><td class="num">{{ minutes(d.used_minutes) }}</td>
+        <td>{% if d.bonus_minutes %}бонус {{ '%+d' % d.bonus_minutes }} мин{% endif %}{% if d.blocked %} заблокирован{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
+
+<section class="card" id="rules">
+  <h2>Правила</h2>
+  <form method="post" action="/devices/{{ device.id }}/rules" class="rules">
+    <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+    <label>Учётная запись ребёнка в Windows <input name="child_user" value="{{ rules.child_user }}"></label>
+    <fieldset><legend>Будни</legend>
+      <label>Минут в день <input type="number" name="wd_limit" min="0" max="1440" value="{{ rules.weekdays.limit_minutes }}"></label>
+      <label>С <input name="wd_start" value="{{ rules.weekdays.window.start }}"></label>
+      <label>До <input name="wd_end" value="{{ rules.weekdays.window.end }}"></label>
+    </fieldset>
+    <fieldset><legend>Выходные</legend>
+      <label>Минут в день <input type="number" name="we_limit" min="0" max="1440" value="{{ rules.weekends.limit_minutes }}"></label>
+      <label>С <input name="we_start" value="{{ rules.weekends.window.start }}"></label>
+      <label>До <input name="we_end" value="{{ rules.weekends.window.end }}"></label>
+    </fieldset>
+    <label>Предупреждать за (мин) <input name="warn" value="{{ rules.warn_at_minutes | join(', ') }}"></label>
+    <label>Не считать время, если нет активности дольше (мин, 0 — всегда считать)
+      <input type="number" name="idle_minutes" min="0" max="60" value="{{ rules.idle_minutes }}"></label>
+    <label>Когда время вышло
+      <select name="enforcement">
+        <option value="logoff" {% if rules.enforcement == "logoff" %}selected{% endif %}>завершить сеанс</option>
+        <option value="lock" {% if rules.enforcement == "lock" %}selected{% endif %}>вернуть на экран входа</option>
+      </select></label>
+    <label>Запрещённые программы (по одной в строке, можно со звёздочкой: Minecraft*)
+      <textarea name="blocked_apps" rows="4">{{ rules.blocked_apps | join("\n") }}</textarea></label>
+    <button class="primary">Сохранить правила</button>
+    <span class="muted small">Версия правил: {{ device.rules_version }}</span>
+  </form>
+</section>
+
+<section class="card" id="log">
+  <h2>Журнал</h2>
+  <form method="get" action="/devices/{{ device.id }}#log" class="inline">
+    <select name="kind" onchange="this.form.submit()">
+      <option value="">все события</option>
+      {% for k, label in kinds.items() %}<option value="{{ k }}" {% if k == kind %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </form>
+  <table class="log">
+  {% for e in events %}
+    {% set text = event_text(e.kind, e.data) %}
+    <tr class="{{ 'alert' if e.kind in alert_kinds else '' }}">
+      <td class="nowrap">{{ local_time(e.ts, "%d.%m %H:%M:%S") }}</td>
+      <td><b>{{ event_label(e.kind) }}</b>{% if text %}<br>{{ text }}{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td class="muted">Пока пусто.</td></tr>
+  {% endfor %}
+  </table>
+</section>
+
+<section class="card">
+  <h2>Устройство</h2>
+  <form method="post" action="/devices/{{ device.id }}/rename" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+    <input name="name" value="{{ device.name }}" maxlength="100"> <button>Переименовать</button>
+  </form>
+  <form method="post" action="/devices/{{ device.id }}/delete" class="inline"
+        onsubmit="return confirm('Удалить устройство и всю его историю? Агент на нём больше не сможет подключиться.')">
+    <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+    <button class="danger">Удалить устройство</button>
+  </form>
+</section>
+
+<script>
+  // Refresh the status block every 10 seconds without reloading the page.
+  const box = document.getElementById("status");
+  setInterval(async () => {
+    try {
+      const r = await fetch(box.dataset.url, {credentials: "same-origin"});
+      if (r.ok && !r.redirected) box.innerHTML = await r.text();
+    } catch (e) {}
+  }, 10000);
+</script>
+{% endblock %}

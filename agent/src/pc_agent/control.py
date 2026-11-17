@@ -73,49 +73,66 @@ class ControlHandler:
     def _apply(
         self, store: Store, action: str, message: dict[str, Any], now: datetime
     ) -> dict[str, Any]:
-        today = now.date()
         if action == "check":
             return {"ok": True, "message": "Пароль верный."}
-        if action == "bonus":
-            try:
-                minutes = int(message.get("minutes", 0))
-            except (TypeError, ValueError):
-                minutes = 0
-            if minutes == 0 or abs(minutes) > MAX_BONUS_MINUTES:
-                return {
-                    "ok": False, "error": "bad_request",
-                    "message": f"Укажите от 1 до {MAX_BONUS_MINUTES} минут.",
-                }
-            store.add_bonus(today, minutes)
-            text = f"Время на сегодня изменено на {minutes:+d} мин."
-            data: dict[str, Any] = {"minutes": minutes}
-        elif action == "block":
-            store.set_blocked(today, True)
-            text, data = "Компьютер заблокирован до конца дня.", {}
-        else:
-            store.set_blocked(today, False)
-            text, data = "Блокировка на сегодня снята.", {}
-        log.info("Команда родителя: %s %s", action, data or "")
-        store.add_event(Event(kind=EventKind.PARENT_COMMAND, data={"action": action, **data}))
-        return {"ok": True, "message": text}
+        return apply_command(store, action, message.get("minutes"), now, source="pc")
 
     def _status(self, now: datetime) -> dict[str, Any]:
-        rules_path = self._data_dir / "rules.json"
+        status = compute_status(self._data_dir, now)
+        status["password_set"] = load_record(self._data_dir) is not None
+        return status
+
+
+def apply_command(
+    store: Store, action: str, minutes: Any, now: datetime, source: str
+) -> dict[str, Any]:
+    """Bonus/block/unblock for today. `source`: "pc" (parent window) or "server"."""
+    today = now.date()
+    data: dict[str, Any] = {}
+    if action == "bonus":
         try:
-            rules = load_rules(rules_path) if rules_path.exists() else Rules()
-        except (ValueError, OSError):
-            rules = Rules()
-        with Store(self._data_dir / "agent.db") as store:
-            state = store.load_day(now.date())
-        d = evaluate(rules, state, now)
-        return {
-            "allowed": d.allowed,
-            "reason": d.reason,
-            "window": d.window,
-            "limit_minutes": d.limit_minutes,
-            "used_minutes": round(d.used_minutes, 1),
-            "remaining_minutes": round(d.remaining_minutes, 1),
-            "bonus_minutes": state.bonus_minutes,
-            "blocked": state.blocked,
-            "password_set": load_record(self._data_dir) is not None,
-        }
+            minutes = int(minutes or 0)
+        except (TypeError, ValueError):
+            minutes = 0
+        if minutes == 0 or abs(minutes) > MAX_BONUS_MINUTES:
+            return {
+                "ok": False, "error": "bad_request",
+                "message": f"Укажите от 1 до {MAX_BONUS_MINUTES} минут.",
+            }
+        store.add_bonus(today, minutes)
+        text = f"Время на сегодня изменено на {minutes:+d} мин."
+        data["minutes"] = minutes
+    elif action == "block":
+        store.set_blocked(today, True)
+        text = "Компьютер заблокирован до конца дня."
+    elif action == "unblock":
+        store.set_blocked(today, False)
+        text = "Блокировка на сегодня снята."
+    else:
+        return {"ok": False, "error": "bad_request", "message": "Неизвестная команда."}
+    log.info("Команда родителя (%s): %s %s", source, action, data or "")
+    store.add_event(Event(kind=EventKind.PARENT_COMMAND,
+                          data={"action": action, "source": source, **data}))
+    return {"ok": True, "message": text}
+
+
+def compute_status(data_dir: Path, now: datetime) -> dict[str, Any]:
+    """Time left etc. from rules.json and the database (no password needed)."""
+    rules_path = data_dir / "rules.json"
+    try:
+        rules = load_rules(rules_path) if rules_path.exists() else Rules()
+    except (ValueError, OSError):
+        rules = Rules()
+    with Store(data_dir / "agent.db") as store:
+        state = store.load_day(now.date())
+    d = evaluate(rules, state, now)
+    return {
+        "allowed": d.allowed,
+        "reason": d.reason,
+        "window": d.window,
+        "limit_minutes": d.limit_minutes,
+        "used_minutes": round(d.used_minutes, 1),
+        "remaining_minutes": round(d.remaining_minutes, 1),
+        "bonus_minutes": state.bonus_minutes,
+        "blocked": state.blocked,
+    }

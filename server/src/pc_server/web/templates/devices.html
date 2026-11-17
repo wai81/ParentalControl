@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block head %}<meta http-equiv="refresh" content="30">{% endblock %}
+{% block content %}
+<h1>Компьютеры</h1>
+{% if not devices %}
+  <p class="muted">Пока ни одного компьютера. Добавьте первый: появится код, который нужно ввести на компьютере ребёнка.</p>
+{% endif %}
+<div class="grid">
+{% for d in devices %}
+  {% set s = d.status or {} %}
+  <a class="card device" href="/devices/{{ d.id }}">
+    <div class="row">
+      <strong>{{ d.name }}</strong>
+      <span class="dot {{ 'on' if is_online(d) else 'off' }}">{{ 'в сети' if is_online(d) else 'не в сети' }}</span>
+    </div>
+    {% if s %}
+      <div class="big {{ '' if s.allowed else 'bad' }}">
+        {% if s.allowed %}Осталось {{ minutes(s.remaining_minutes) }}{% else %}{{ s.reason or 'Нельзя' }}{% endif %}
+      </div>
+      <div class="muted">
+        {% if s.child_logged_in %}
+          {% if s.idle %}не за компьютером{% elif s.app %}сейчас: {{ s.app }}{% else %}ребёнок вошёл{% endif %}
+        {% else %}ребёнок не вошёл{% endif %}
+      </div>
+    {% else %}
+      <div class="muted">Ещё не присылал данных</div>
+    {% endif %}
+    <div class="muted small">Связь: {{ local_time(d.last_seen_at) }}</div>
+  </a>
+{% endfor %}
+</div>
+<form method="post" action="/devices/pair">
+  <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+  <button class="primary">Добавить компьютер</button>
+</form>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Подключение компьютера{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Подключение компьютера</h1>
+  <p>Код подключения (действует до {{ local_time(code.expires_at, '%H:%M') }}):</p>
+  <p class="code">{{ code.code }}</p>
+  <p>На компьютере ребёнка, где уже установлен агент, откройте PowerShell <b>от имени администратора</b> и выполните:</p>
+  <pre>&amp; "C:\Program Files\ParentalControl\agent\pcagent.exe" connect --server {{ server_url }} --code {{ code.code }} --name "Компьютер Маши"</pre>
+  <p class="muted">Вместо «Компьютер Маши» напишите любое понятное вам название. Код одноразовый.</p>
+  <p><a href="/">К списку компьютеров</a></p>
+</section>
+{% endblock %}
