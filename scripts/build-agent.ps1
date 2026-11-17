@@ -13,6 +13,7 @@ if ($LASTEXITCODE -ne 0) { throw 'pyinstaller failed' }
 $version = (uv run python -c "import pc_agent; print(pc_agent.__version__)").Trim()
 $zip = Join-Path $root "dist\pcagent-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path (Join-Path $root 'dist\pcagent') -DestinationPath $zip
+# The archive holds the pcagent folder and the installation guide next to it.
+Compress-Archive -Path (Join-Path $root 'dist\pcagent'), (Join-Path $root 'agent\INSTALL.txt') -DestinationPath $zip
 Write-Host "Built: dist\pcagent\pcagent.exe"
 Write-Host "Archive: $zip"

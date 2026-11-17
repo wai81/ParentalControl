@@ -24,3 +24,7 @@
 *.lock text eol=lf
 .gitignore text eol=lf
 .gitattributes text eol=lf
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+server/deploy/*.env text eol=lf

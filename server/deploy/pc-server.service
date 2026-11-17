@@ -1,0 +1,45 @@
+[Unit]
+Description=Parental control server (web panel and agent API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pcserver
+Group=pcserver
+EnvironmentFile=/etc/pc-server.env
+StateDirectory=pc-server
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/pc-server
+ExecStart=/opt/pc-server/venv/bin/pc_server serve --host ${PC_SERVER_HOST} --port ${PC_SERVER_PORT}
+Restart=on-failure
+RestartSec=5
+
+# The server only needs its data folder: everything else is read-only for it.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

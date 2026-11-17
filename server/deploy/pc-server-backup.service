@@ -1,0 +1,14 @@
+[Unit]
+Description=Parental control server: database backup
+
+[Service]
+Type=oneshot
+User=pcserver
+Group=pcserver
+EnvironmentFile=/etc/pc-server.env
+StateDirectory=pc-server
+ExecStart=/opt/pc-server/venv/bin/pc_server backup --keep 14
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
