@@ -35,6 +35,43 @@ uv run pcagent --data-dir .\devdata status
 uv run pcagent --data-dir .\devdata events -n 30
 ```
 
+## Сборка и установка службы
+
+Сборка создаёт папку `dist\pcagent\` с `pcagent.exe`. Python на компьютере ребёнка не нужен.
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts\build-agent.ps1
+```
+
+Установка (в терминале, запущенном от имени администратора):
+
+```bash
+dist\pcagent\pcagent.exe service install
+```
+
+Что делает `service install`:
+- копирует программу в `C:\Program Files\ParentalControl\agent\`, куда ребёнок не может ничего записать;
+- закрывает папку данных `C:\ProgramData\ParentalControl\agent\` от записи для обычных пользователей;
+- регистрирует службу `ParentalControlAgent`: запуск от имени SYSTEM, автоматический старт
+  с Windows и перезапуск через 5 секунд, если процесс упал или его завершили;
+- запускает службу.
+
+Повторный `service install` из новой сборки обновляет уже установленную службу.
+Остальные команды управления: `service status | start | stop | restart | remove`.
+
+После установки создайте правила, тоже от имени администратора:
+
+```bash
+"C:\Program Files\ParentalControl\agent\pcagent.exe" init --child ИмяРебёнка
+```
+
+Проверка службы целиком: установка, перезапуск после завершения процесса, обновление и удаление.
+Скрипт после себя всё удаляет.
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts\test-service.ps1
+```
+
 ## Команды
 
 | Команда | Что делает |
@@ -46,7 +83,7 @@ uv run pcagent --data-dir .\devdata events -n 30
 | `pcagent bonus 30` / `bonus -15` | меняет время на сегодня |
 | `pcagent block` / `unblock` | блокирует до конца дня или снимает блокировку |
 | `pcagent events -n 50` | выводит журнал |
-| `pcagent service install/start/stop/remove` | управляет службой Windows (для собранного exe) |
+| `pcagent service install/status/start/stop/restart/remove` | управляет службой Windows (только из собранного exe) |
 
 По умолчанию данные хранятся в `C:\ProgramData\ParentalControl\agent\`: `rules.json`, `agent.db`, `agent.log`.
 Другую папку можно задать через `--data-dir` или переменную окружения `PC_AGENT_DATA`.
@@ -70,8 +107,7 @@ uv run pcagent --data-dir .\devdata events -n 30
 
 ## Пока не сделано
 
-- Сборка в `pcagent.exe` (PyInstaller) и установка как служба. Код службы есть,
-  но на собранном exe ещё не проверялся.
+- Подпись exe цифровым сертификатом. Без неё SmartScreen или антивирус могут предупреждать о `pcagent.exe`.
 - Helper в сеансе ребёнка: активное окно и время в каждой программе, учёт бездействия, значок в трее.
 - Блокировка сайтов (`blocked_sites` пока не применяется), расширение браузера.
 - Синхронизация с сервером.

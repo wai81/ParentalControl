@@ -104,7 +104,9 @@ def cmd_service(args: argparse.Namespace) -> int:
     from pc_agent import service
 
     if args.action == "install":
-        service.install(_paths(args))
+        service.install()
+    elif args.action == "remove":
+        service.remove()
     else:
         service.control(args.action)
     return 0
@@ -144,24 +146,45 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_events)
 
     p = sub.add_parser("service", help="управление службой Windows (нужны права администратора)")
-    p.add_argument("action", choices=["install", "remove", "start", "stop", "restart"])
+    p.add_argument("action", choices=["install", "remove", "start", "stop", "restart", "status"])
     p.set_defaults(func=cmd_service)
     return parser
+
+
+def _utf8_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv and getattr(sys, "frozen", False):
-        # Started by the Service Control Manager.
         from pc_agent.service import run_dispatcher
 
-        run_dispatcher()
+        if run_dispatcher():
+            return 0
+        # Started by a person (double-click), not by the Service Control Manager.
+        _utf8_output()
+        build_parser().print_help()
+        print()
+        with contextlib.suppress(EOFError):
+            input("Нажмите Enter, чтобы закрыть окно...")
         return 0
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
+    _utf8_output()
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except PermissionError as exc:
+        print(f"Нет доступа: {exc.filename or exc}. Запустите команду от имени администратора.")
+        return 1
+    except Exception as exc:
+        from pc_agent.service import ServiceError
+
+        if isinstance(exc, ServiceError):
+            print(exc)
+            return 1
+        raise
 
 
 if __name__ == "__main__":
