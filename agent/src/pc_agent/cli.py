@@ -30,12 +30,26 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _child_problems(user: str) -> list[str]:
+    if sys.platform != "win32":
+        return []
+    from pc_agent.hardening import check_child_account
+
+    return check_child_account(user)
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     paths = _paths(args)
     if paths.rules.exists() and not args.force:
         print(f"{paths.rules} уже существует. Перезаписать: --force")
         return 1
     paths.data_dir.mkdir(parents=True, exist_ok=True)
+    problems = _child_problems(args.child)
+    for problem in problems:
+        print(f"ВНИМАНИЕ: {problem}")
+    if problems and not args.force:
+        print("Исправьте это или повторите с --force.")
+        return 1
     save_rules(paths.rules, Rules(child_user=args.child))
     print(f"Создан {paths.rules}. Отредактируйте лимиты и списки в этом файле.")
     return 0
@@ -59,7 +73,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Лимит на сегодня:   {d.limit_minutes:.0f} мин{bonus}")
     print(f"Использовано:       {d.used_minutes:.0f} мин")
     print(f"Осталось:           {d.remaining_minutes:.0f} мин")
-    print(f"Сейчас можно:       {'да' if d.allowed else 'нет — ' + (d.reason or '')}")
+    print(f"Сейчас можно:       {'да' if d.allowed else 'нет: ' + (d.reason or '')}")
     if rules.blocked_apps:
         print(f"Запрещённые программы: {', '.join(rules.blocked_apps)}")
     if apps:
@@ -118,7 +132,7 @@ def cmd_service(args: argparse.Namespace) -> int:
     from pc_agent import service
 
     if args.action == "install":
-        service.install()
+        service.install(disable_old=args.disable_old)
     elif args.action == "remove":
         service.remove()
     else:
@@ -165,6 +179,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("service", help="управление службой Windows (нужны права администратора)")
     p.add_argument("action", choices=["install", "remove", "start", "stop", "restart", "status"])
+    p.add_argument("--disable-old", action="store_true",
+                   help="при установке отключить старую версию на PowerShell")
     p.set_defaults(func=cmd_service)
     return parser
 

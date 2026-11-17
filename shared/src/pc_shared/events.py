@@ -18,6 +18,7 @@ class EventKind(StrEnum):
     WINDOW_FOCUS = "window_focus"
     HELPER_STARTED = "helper_started"
     HELPER_STOPPED = "helper_stopped"
+    TIMEZONE_CHANGED = "timezone_changed"
     WARNING = "warning"
     SESSION_ENDED = "session_ended"
     RULES_ERROR = "rules_error"

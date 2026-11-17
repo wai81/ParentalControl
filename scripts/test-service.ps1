@@ -22,6 +22,17 @@ function Check([bool]$Ok, [string]$Text) {
     else { Write-Host "FAIL $Text" -ForegroundColor Red; $script:failed++ }
 }
 function Get-Svc { Get-CimInstance Win32_Service -Filter "Name='$name'" }
+function Test-SafeBoot {
+    $base = 'HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot'
+    (Test-Path "$base\Minimal\$name") -and (Test-Path "$base\Network\$name")
+}
+function Test-UsersCanChangeTimezone {
+    $cfg = Join-Path $env:TEMP 'pc-user-rights.inf'
+    secedit /export /cfg $cfg /areas USER_RIGHTS | Out-Null
+    $line = Select-String -Path $cfg -Pattern '^SeTimeZonePrivilege' | Select-Object -First 1
+    Remove-Item $cfg -Force
+    return [bool]($line -and $line.Line -match '\*S-1-5-32-545')
+}
 function Wait-Running([int]$Seconds = 20) {
     for ($i = 0; $i -lt $Seconds; $i++) {
         $s = Get-Svc
@@ -46,6 +57,13 @@ try {
     Check ($svc.PathName -like "*$installed*") "registered path: $($svc.PathName)"
     Check (Test-Path $installed) 'files copied to Program Files'
     sc.exe qfailure $name
+
+    Step 'hardening'
+    Check (Test-SafeBoot) 'service registered for Safe Mode (Minimal and Network)'
+    Check (-not (Test-UsersCanChangeTimezone)) 'Users group cannot change the time zone'
+    & $installed init --child $env:USERNAME | Out-Host
+    Check ($LASTEXITCODE -eq 1) "init refuses an administrator account as the child (exit $LASTEXITCODE)"
+    Check (-not (Test-Path (Join-Path $data 'rules.json'))) 'no rules written for an admin child'
 
     Step 'agent writes log and events'
     Start-Sleep -Seconds 8
@@ -109,6 +127,8 @@ try {
     Step 'remove'
     & $buildExe service remove | Out-Host
     Check (-not (Get-Svc)) 'service removed'
+    Check (-not (Test-SafeBoot)) 'Safe Mode registration removed'
+    Check (Test-UsersCanChangeTimezone) 'Users may change the time zone again (Windows default)'
 }
 catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red

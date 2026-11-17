@@ -10,7 +10,7 @@ import fnmatch
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 
 from pc_agent.activity import Activity, ActivityHub
@@ -30,6 +30,9 @@ MAX_TICK_GAP_SECONDS = 30.0
 HELPER_RESTART_SECONDS = 10.0
 # Window focus shorter than this (alt-tab flicker) is not logged.
 MIN_FOCUS_LOG_SECONDS = 2.0
+# How long the local database keeps data (the server will keep its own copy).
+EVENTS_KEEP_DAYS = 90
+USAGE_KEEP_DAYS = 400
 
 # System helpers running in every user session: not interesting in the activity log.
 NOISE_PROCESSES = frozenset(
@@ -69,6 +72,8 @@ class Platform(Protocol):
     def lock(self, session_id: int) -> bool: ...
     def start_helper(self, session_id: int) -> int | None: ...
     def helper_alive(self, pid: int) -> bool: ...
+    def timezone(self) -> str: ...
+    def exe_names(self, exe: str) -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -98,12 +103,16 @@ class Agent:
         self._rules = rules
         self._hub = hub
         self._helper_pid: int | None = None
+        self._timezone: str | None = None
+        self._purged_on: date | None = None
         self._helper_started_at: float | None = None
         self._focus: tuple[str, str] | None = None
         self._focus_since = 0.0
         self._prev_mono: float | None = None
         self._session_id: int | None = None
         self._known: dict[tuple[int, float], ProcInfo] = {}
+        # How many processes of each program run: Chrome has dozens, but it is one program.
+        self._running: dict[str, int] = {}
         self._scanned = False
         self._pending_since: float | None = None
 
@@ -123,6 +132,8 @@ class Agent:
             elapsed = min(max(mono - self._prev_mono, 0.0), MAX_TICK_GAP_SECONDS)
         self._prev_mono = mono
 
+        self._check_timezone()
+        self._purge_old(now.date())
         rules = self._rules.get()
         if not rules.child_user:
             return TickResult(None, False, None)
@@ -189,6 +200,31 @@ class Agent:
                 }
             )
         return TickResult(session_id, active, decision, idle=idle, app=app)
+
+    def _purge_old(self, today: date) -> None:
+        if self._purged_on == today:
+            return
+        self._purged_on = today
+        deleted = self._store.purge(today, EVENTS_KEEP_DAYS, USAGE_KEEP_DAYS)
+        if deleted:
+            log.info("Удалено старых записей журнала: %s", deleted)
+
+    def _check_timezone(self) -> None:
+        """Log a time zone change: it shifts the allowed hours and the start of the day.
+
+        Compared with the value saved in the database, so a change made before a
+        reboot is noticed too.
+        """
+        current = self._platform.timezone()
+        if not current or current == self._timezone:
+            return
+        saved = self._store.get_setting("timezone")
+        if saved and saved != current:
+            log.warning("Часовой пояс изменён: %s -> %s", saved, current)
+            self._event(EventKind.TIMEZONE_CHANGED, old=saved, new=current)
+        if saved != current:
+            self._store.set_setting("timezone", current)
+        self._timezone = current
 
     def _ensure_helper(self, session_id: int, mono: float) -> None:
         """Keep the helper running in the child's session; restart it if it was closed."""
@@ -262,12 +298,8 @@ class Agent:
         )
 
     def _session_changed(self) -> None:
-        for proc in self._known.values():
-            if proc.name.lower() not in NOISE_PROCESSES:
-                self._event(
-                    EventKind.PROCESS_STOPPED, name=proc.name, pid=proc.pid, session_end=True
-                )
         self._known.clear()
+        self._running.clear()
         self._scanned = False
         self._pending_since = None
         self._track_focus(None, self._prev_mono or 0.0)
@@ -276,6 +308,20 @@ class Agent:
         self._helper_started_at = None
         if self._hub is not None:
             self._hub.set_expected_pid(None)
+
+    def _is_blocked_process(self, proc: ProcInfo, patterns: list[str]) -> bool:
+        """By file name, and by the names inside the exe (original file name, product,
+        description) which stay the same when the file is renamed."""
+        if is_blocked(proc.name, patterns):
+            return True
+        if not proc.exe:
+            return False
+        try:
+            names = self._platform.exe_names(proc.exe)
+        except Exception:
+            log.debug("Не удалось прочитать сведения о файле %s", proc.exe, exc_info=True)
+            return False
+        return any(is_blocked(name, patterns) for name in names)
 
     def _scan_processes(self, session_id: int, rules: Rules, mono: float) -> None:
         first_scan = not self._scanned
@@ -286,7 +332,7 @@ class Agent:
         for key, proc in current.items():
             if key in self._known:
                 continue
-            if rules.blocked_apps and is_blocked(proc.name, rules.blocked_apps):
+            if rules.blocked_apps and self._is_blocked_process(proc, rules.blocked_apps):
                 ok = self._platform.kill(proc.pid)
                 killed.append(proc.name)
                 self._event(EventKind.APP_BLOCKED, name=proc.name, exe=proc.exe, killed=ok)
@@ -295,20 +341,23 @@ class Agent:
                     self._known[key] = proc
                 continue
             self._known[key] = proc
-            if proc.name.lower() not in NOISE_PROCESSES:
-                self._event(
-                    EventKind.PROCESS_STARTED,
-                    name=proc.name,
-                    exe=proc.exe,
-                    pid=proc.pid,
-                    already_running=first_scan,
-                )
+            name = proc.name.lower()
+            self._running[name] = self._running.get(name, 0) + 1
+            # Programs already open when the agent starts are not "started" now.
+            if self._running[name] == 1 and not first_scan and name not in NOISE_PROCESSES:
+                self._event(EventKind.PROCESS_STARTED, name=proc.name, exe=proc.exe)
 
         for key in list(self._known):
             if key not in current:
                 proc = self._known.pop(key)
-                if proc.name.lower() not in NOISE_PROCESSES:
-                    self._event(EventKind.PROCESS_STOPPED, name=proc.name, pid=proc.pid)
+                name = proc.name.lower()
+                if name not in self._running:
+                    continue  # a blocked process we could not kill
+                self._running[name] -= 1
+                if self._running[name] == 0:
+                    del self._running[name]
+                    if name not in NOISE_PROCESSES:
+                        self._event(EventKind.PROCESS_STOPPED, name=proc.name)
 
         if killed:
             names = ", ".join(sorted(set(killed)))

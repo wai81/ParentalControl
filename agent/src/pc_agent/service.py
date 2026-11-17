@@ -23,6 +23,8 @@ import servicemanager
 import win32service
 import win32serviceutil
 
+from pc_agent import hardening
+from pc_agent.rules_file import RulesFile
 from pc_agent.runner import Paths, default_data_dir, run_agent
 
 SERVICE_NAME = "ParentalControlAgent"
@@ -97,7 +99,7 @@ def _require_admin() -> None:
     if not ctypes.windll.shell32.IsUserAnAdmin():
         raise ServiceError(
             "Нужны права администратора: откройте терминал через "
-            "«Запуск от имени администратора»."
+            "\"Запуск от имени администратора\"."
         )
 
 
@@ -209,11 +211,23 @@ def _copy_build(target: Path) -> Path:
 # ---------- commands ----------
 
 
-def install() -> None:
+def install(disable_old: bool = False) -> None:
     """Install or upgrade: copy files, protect data, register, start."""
     _require_frozen()
     _require_admin()
     paths = Paths(default_data_dir())
+
+    # Two controllers would each count time and end the session on their own.
+    if hardening.old_version_enabled():
+        if not disable_old:
+            raise ServiceError(
+                "Работает старая версия родительского контроля (PowerShell, задача "
+                f"{hardening.OLD_TASK}). Удалите её (parent.cmd, пункт U) или повторите установку "
+                "с параметром --disable-old: старая задача будет отключена."
+            )
+        hardening.disable_old_version()
+        print(f"Старая версия отключена (задача {hardening.OLD_TASK}).")
+
     existed = _state() is not None
     _stop_if_running()
     _stop_installed_processes(install_dir())
@@ -232,6 +246,8 @@ def install() -> None:
     print(f"Файлы агента: {exe.parent}")
     harden_data_dir(paths)
     print(f"Данные агента (только чтение для пользователей): {paths.data_dir}")
+    hardening.set_users_can_change_timezone(False)
+    print("Обычным пользователям запрещено менять часовой пояс (действует со следующего входа).")
 
     if existed:
         win32serviceutil.ChangeServiceConfig(
@@ -249,14 +265,21 @@ def install() -> None:
     _sc("failure", SERVICE_NAME, "reset=", "86400",
         "actions=", "restart/5000/restart/5000/restart/5000")
     _sc("failureflag", SERVICE_NAME, "1")
+    hardening.set_safe_mode_start(SERVICE_NAME, True)
 
     _start()
-    print(f"Служба {SERVICE_NAME} {'обновлена' if existed else 'установлена'} и запущена.")
+    print(f"Служба {SERVICE_NAME} {'обновлена' if existed else 'установлена'} и запущена "
+          "(работает и в безопасном режиме).")
     if not paths.rules.exists():
         print(
             f"Правил пока нет, агент ничего не ограничивает. Создайте их:\n"
             f'  "{exe}" init --child ИМЯ_РЕБЁНКА'
         )
+        return
+    with contextlib.suppress(Exception):
+        child = RulesFile(paths.rules).get().child_user
+        for problem in hardening.check_child_account(child) if child else []:
+            print(f"ВНИМАНИЕ: {problem}")
 
 
 def remove() -> None:
@@ -267,7 +290,9 @@ def remove() -> None:
     _stop_if_running()
     win32serviceutil.RemoveService(SERVICE_NAME)
     _stop_installed_processes(install_dir())
-    print(f"Служба {SERVICE_NAME} удалена.")
+    hardening.set_safe_mode_start(SERVICE_NAME, False)
+    hardening.set_users_can_change_timezone(True)  # back to the Windows default
+    print(f"Служба {SERVICE_NAME} удалена, системные настройки возвращены как были по умолчанию.")
     print(f"Файлы остались в {install_dir()} и {default_data_dir()}, их можно удалить вручную.")
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from pc_shared.rules import Rules
 
@@ -46,6 +46,12 @@ def evaluate(rules: Rules, state: DayState, now: datetime) -> Decision:
     limit = float(day_rules.limit_minutes + state.bonus_minutes)
     left_by_limit = limit - state.used_minutes
     left_by_window = window.end_minute - minute if in_window else 0.0
+    if in_window and window.end_minute == 24 * 60:
+        # "until 24:00" followed by "from 00:00" tomorrow: midnight is not a deadline,
+        # so no "10 minutes left" warning at 23:50.
+        tomorrow = rules.for_date(now.date() + timedelta(days=1))
+        if tomorrow.window.start_minute == 0:
+            left_by_window = float("inf")
     remaining = max(0.0, min(left_by_limit, left_by_window))
 
     reason: str | None = None

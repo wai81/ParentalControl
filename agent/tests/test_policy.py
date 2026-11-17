@@ -109,3 +109,14 @@ def test_rules_normalization():
     assert r.warn_at_minutes == [10, 5, 1]
     assert r.blocked_apps == ["roblox", "minecraft*"]
     assert Window(start="8:05", end="9:00").start == "08:05"
+
+
+def test_no_midnight_deadline_when_tomorrow_starts_at_midnight():
+    whole_day = DayRules(limit_minutes=600, window=Window(start="00:00", end="24:00"))
+    r = rules(weekdays=whole_day)
+    d = evaluate(r, state(), at(MONDAY, "23:55"))
+    assert d.allowed and d.warn_now == frozenset() and d.remaining_minutes == pytest.approx(600)
+    # Friday night: Saturday's window starts at 09:00, so midnight is a real deadline.
+    friday = date(2026, 11, 20)
+    d = evaluate(r, state(friday), at(friday, "23:55"))
+    assert d.remaining_minutes == pytest.approx(5) and d.warn_now == {10, 5}

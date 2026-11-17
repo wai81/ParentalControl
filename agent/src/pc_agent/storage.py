@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from pc_agent.policy import DayState
@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS app_usage (
     app     TEXT NOT NULL,
     seconds REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (day, app)
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 CREATE INDEX IF NOT EXISTS events_unsynced ON events (synced) WHERE synced = 0;
@@ -106,6 +110,19 @@ class Store:
         ).fetchall()
         return [(date.fromisoformat(d), used / 60) for d, used in rows]
 
+    # ---------- agent's own settings ----------
+
+    def get_setting(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
     # ---------- time per application ----------
 
     def add_app_usage(self, day: date, app: str, seconds: float) -> None:
@@ -121,6 +138,17 @@ class Store:
             (day.isoformat(), limit),
         ).fetchall()
         return [(app, seconds / 60) for app, seconds in rows]
+
+    # ---------- retention ----------
+
+    def purge(self, today: date, events_days: int, usage_days: int) -> int:
+        """Delete old log entries and counters. Returns the number of deleted events."""
+        events_before = (today - timedelta(days=events_days)).isoformat()
+        usage_before = (today - timedelta(days=usage_days)).isoformat()
+        deleted = self._conn.execute("DELETE FROM events WHERE ts < ?", (events_before,)).rowcount
+        self._conn.execute("DELETE FROM app_usage WHERE day < ?", (usage_before,))
+        self._conn.execute("DELETE FROM day_usage WHERE day < ?", (usage_before,))
+        return deleted
 
     # ---------- activity log ----------
 

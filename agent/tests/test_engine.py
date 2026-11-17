@@ -23,6 +23,7 @@ class FakePlatform:
         self.logoffs: list[int] = []
         self.locks: list[int] = []
         self.helper_starts: list[int] = []
+        self.tz = "Belarus Standard Time"
         self.helper_running = True
         self.next_helper_pid = 500
 
@@ -34,6 +35,12 @@ class FakePlatform:
 
     def helper_alive(self, pid):
         return self.helper_running
+
+    def timezone(self):
+        return self.tz
+
+    def exe_names(self, exe):
+        return []
 
     def find_user_session(self, user):
         return self.session
@@ -133,22 +140,24 @@ def test_warning_shown_once(env):
 
 def test_process_log_and_blocking(env):
     agent, platform, store, _ = env
-    platform.procs = [ProcInfo(10, "notepad.exe", r"C:\Windows\notepad.exe", 1.0),
-                      ProcInfo(11, "svchost.exe", None, 1.0)]
-    agent.tick(NOON, 0)
-    platform.procs.append(ProcInfo(12, "RobloxPlayerBeta.exe", None, 2.0))
+    platform.procs = [ProcInfo(10, "explorer.exe", None, 1.0),
+                      ProcInfo(11, "chrome.exe", None, 1.0)]
+    agent.tick(NOON, 0)  # already running when the agent starts: not logged
+    platform.procs += [ProcInfo(12, "RobloxPlayerBeta.exe", None, 2.0),
+                       ProcInfo(13, "notepad.exe", r"C:\Windows\notepad.exe", 2.0),
+                       ProcInfo(14, "chrome.exe", None, 2.0),  # another tab
+                       ProcInfo(15, "svchost.exe", None, 2.0)]
     agent.tick(NOON, 5)
-    platform.procs = [p for p in platform.procs if p.pid != 10]
+    platform.procs = [p for p in platform.procs if p.pid not in (11, 13)]
     agent.tick(NOON, 10)
 
     events = store.recent_events(500)
-    started = [e for e in events if e.kind == EventKind.PROCESS_STARTED]
-    assert [e.data["name"] for e in started] == ["notepad.exe"]  # svchost is noise
-    assert started[0].data["already_running"] is True
+    started = [e.data["name"] for e in events if e.kind == EventKind.PROCESS_STARTED]
+    stopped = [e.data["name"] for e in events if e.kind == EventKind.PROCESS_STOPPED]
+    assert started == ["notepad.exe"]  # chrome was already open, svchost is noise
+    assert stopped == ["notepad.exe"]  # one chrome process is still running
     assert platform.killed == [12]
     assert any(e.kind == EventKind.APP_BLOCKED for e in events)
-    assert any(e.kind == EventKind.PROCESS_STOPPED and e.data["name"] == "notepad.exe"
-               for e in events)
     assert any("запрещена" in n for n in platform.notes)
 
 
@@ -299,3 +308,32 @@ def test_hub_accepts_only_expected_process():
     assert hub.accepts(os.getpid())
     hub.set_expected_pid(999_999)
     assert not hub.accepts(os.getpid())
+
+
+def test_timezone_change_logged_also_across_restarts(env, tmp_path):
+    agent, platform, store, rules_path = env
+    agent.tick(NOON, 0)
+    agent.tick(NOON, 5)
+    assert EventKind.TIMEZONE_CHANGED not in kinds(store)  # first value is just remembered
+    platform.tz = "Line Islands Standard Time"
+    agent.tick(NOON, 10)
+    changes = [e.data for e in store.recent_events(100) if e.kind == EventKind.TIMEZONE_CHANGED]
+    assert changes == [{"old": "Belarus Standard Time", "new": "Line Islands Standard Time"}]
+
+    # The child changes it back and reboots: the new agent compares with the saved value.
+    platform.tz = "Belarus Standard Time"
+    Agent(platform, store, RulesFile(rules_path)).tick(NOON, 0)
+    assert kinds(store).count(EventKind.TIMEZONE_CHANGED) == 2
+
+
+def test_renamed_exe_blocked_by_version_info(env):
+    agent, platform, store, _ = env
+    platform.exe_names = lambda exe: (
+        ["RobloxPlayerBeta.exe", "Roblox"] if exe.endswith("homework.exe") else []
+    )
+    platform.procs = [
+        ProcInfo(20, "homework.exe", r"C:\Users\kid\Desktop\homework.exe", 1.0),
+        ProcInfo(21, "notepad.exe", r"C:\Windows\notepad.exe", 1.0),
+    ]
+    agent.tick(NOON, 0)
+    assert platform.killed == [20]

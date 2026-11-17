@@ -8,13 +8,15 @@ import subprocess
 import sys
 
 import psutil
+import pywintypes
+import win32api
 import win32con
 import win32event
 import win32process
 import win32profile
 import win32ts
 
-from pc_agent import winapi
+from pc_agent import hardening, winapi
 from pc_agent.engine import ProcInfo
 
 log = logging.getLogger(__name__)
@@ -24,6 +26,30 @@ def helper_command() -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, "helper"]
     return [sys.executable, "-m", "pc_agent", "helper"]
+
+
+_VERSION_FIELDS = ("OriginalFilename", "InternalName", "ProductName", "FileDescription")
+
+
+def read_exe_names(path: str) -> list[str]:
+    """Names stored in the exe's version resource; renaming the file does not change them."""
+    try:
+        translations = win32api.GetFileVersionInfo(path, r"\VarFileInfo\Translation") or []
+    except pywintypes.error:
+        return []
+    names: list[str] = []
+    for lang, codepage in translations:
+        for field in _VERSION_FIELDS:
+            try:
+                value = win32api.GetFileVersionInfo(
+                    path, rf"\StringFileInfo\{lang:04x}{codepage:04x}\{field}"
+                )
+            except pywintypes.error:
+                continue
+            value = (value or "").strip()
+            if value and value not in names:
+                names.append(value)
+    return names
 
 
 def _user_matches(rule_user: str, session: winapi.Session) -> bool:
@@ -40,6 +66,7 @@ def _user_matches(rule_user: str, session: winapi.Session) -> bool:
 class WindowsPlatform:
     def __init__(self) -> None:
         self._helpers: dict[int, object] = {}  # pid -> process handle or Popen
+        self._exe_names: dict[tuple[str, int], list[str]] = {}
 
     def find_user_session(self, user: str) -> int | None:
         matches = [s for s in winapi.list_sessions() if _user_matches(user, s)]
@@ -134,6 +161,20 @@ class WindowsPlatform:
             token.Close()
         self._helpers[pid] = process
         return pid
+
+    def exe_names(self, exe: str) -> list[str]:
+        try:
+            key = (exe.lower(), os.stat(exe).st_mtime_ns)
+        except OSError:
+            return []
+        if key not in self._exe_names:
+            if len(self._exe_names) > 2000:
+                self._exe_names.clear()
+            self._exe_names[key] = read_exe_names(exe)
+        return self._exe_names[key]
+
+    def timezone(self) -> str:
+        return hardening.current_timezone()
 
     def helper_alive(self, pid: int) -> bool:
         handle = self._helpers.get(pid)
