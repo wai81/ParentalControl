@@ -1,36 +1,45 @@
 {% extends "base.html" %}
+{% from "_time.html" import time_left, now_line %}
 {% block head %}<meta http-equiv="refresh" content="30">{% endblock %}
 {% block content %}
-<h1>Компьютеры</h1>
+<div class="page-head">
+  <h1>Компьютеры</h1>
+  {% if devices %}
+  <form method="post" action="/devices/pair">
+    <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+    <button class="primary">{{ icon("plus") }}Добавить компьютер</button>
+  </form>
+  {% endif %}
+</div>
+
 {% if not devices %}
-  <p class="muted">Пока ни одного компьютера. Добавьте первый: появится код, который нужно ввести на компьютере ребёнка.</p>
+  <section class="card empty">
+    <div class="brand-mark">{{ icon("monitor") }}</div>
+    <h2>Пока ни одного компьютера</h2>
+    <p class="muted">Нажмите кнопку ниже: появится код, который нужно ввести на компьютере ребёнка.</p>
+    <form method="post" action="/devices/pair">
+      <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
+      <button class="primary">{{ icon("plus") }}Добавить компьютер</button>
+    </form>
+  </section>
 {% endif %}
+
 <div class="grid">
 {% for d in devices %}
   {% set s = d.status or {} %}
-  <a class="card device" href="/devices/{{ d.id }}">
+  <a class="card" href="/devices/{{ d.id }}">
     <div class="row">
       <strong>{{ d.name }}</strong>
-      <span class="dot {{ 'on' if is_online(d) else 'off' }}">{{ 'в сети' if is_online(d) else 'не в сети' }}</span>
+      <span class="pill {{ 'on' if is_online(d) else '' }}">{{ "в сети" if is_online(d) else "не в сети" }}</span>
     </div>
     {% if s %}
-      <div class="big {{ '' if s.allowed else 'bad' }}">
-        {% if s.allowed %}Осталось {{ minutes(s.remaining_minutes) }}{% else %}{{ s.reason or 'Нельзя' }}{% endif %}
-      </div>
-      <div class="muted">
-        {% if s.child_logged_in %}
-          {% if s.idle %}не за компьютером{% elif s.app %}сейчас: {{ s.app }}{% else %}ребёнок вошёл{% endif %}
-        {% else %}ребёнок не вошёл{% endif %}
-      </div>
+      {{ time_left(s, big=False) }}
+      {{ now_line(s) }}
     {% else %}
-      <div class="muted">Ещё не присылал данных</div>
+      <p class="muted">Ещё не присылал данных</p>
     {% endif %}
-    <div class="muted small">Связь: {{ local_time(d.last_seen_at) }}</div>
+    <div class="muted small" style="margin-top:10px">Связь: {{ relative_time(d.last_seen_at) }}</div>
   </a>
 {% endfor %}
 </div>
-<form method="post" action="/devices/pair">
-  <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
-  <button class="primary">Добавить компьютер</button>
-</form>
 {% endblock %}

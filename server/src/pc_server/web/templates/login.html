@@ -1,15 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Вход{% endblock %}
 {% block content %}
-<section class="card narrow">
+<section class="card center-card">
+  <div class="brand-mark">{{ icon("clock") }}</div>
   <h1>Вход для родителя</h1>
   {% if not has_password %}
-    <p class="bad">Пароль ещё не задан. На сервере выполните:</p>
-    <pre>pc_server set-password</pre>
+    <p class="muted">Пароль ещё не задан. На сервере выполните:</p>
+    <div class="cmd"><pre>sudo runuser -u pcserver -- env PC_SERVER_DATA_DIR=/var/lib/pc-server /opt/pc-server/venv/bin/pc_server set-password</pre></div>
+    <p class="muted small">Если сервер запущен без установщика: <code>pc_server set-password</code></p>
   {% else %}
-    {% if error %}<p class="flash bad">{{ error }}</p>{% endif %}
     <form method="post" action="/login">
-      <label>Пароль <input type="password" name="password" autofocus required autocomplete="current-password"></label>
+      {% if error %}<div class="flash bad" role="alert">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+      <label>Пароль
+        <input type="password" name="password" autofocus required autocomplete="current-password">
+      </label>
       <button class="primary">Войти</button>
     </form>
   {% endif %}

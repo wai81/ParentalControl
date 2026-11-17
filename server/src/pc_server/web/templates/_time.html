@@ -1,0 +1,34 @@
+{# Time left + meter for a device status. Used by the list card and the device page. #}
+{% from "_icons.html" import icon %}
+{% macro time_left(s, big=True) -%}
+  {% set m = meter(s) %}
+  {% if s.blocked %}
+    <div class="headline blocked">{{ icon("lock") }} Заблокировано до конца дня</div>
+  {% elif not s.allowed %}
+    <div class="headline blocked">{{ icon("clock") }} {{ s.reason or "Сейчас нельзя" }}</div>
+  {% else %}
+    <div class="headline {{ '' if big else 'small-head' }}">{{ minutes(s.remaining_minutes) }} <span class="unit">осталось</span></div>
+  {% endif %}
+  <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="{{ s.limit_minutes|round|int }}"
+       aria-valuenow="{{ s.used_minutes|round|int }}" aria-label="Использовано за сегодня">
+    <span class="{{ m.level }}" style="width: {{ m.pct }}%"></span>
+  </div>
+  <div class="meter-legend">
+    <span>{{ minutes(s.used_minutes) }} из {{ minutes(s.limit_minutes) }}</span>
+    <span class="nowrap" title="Разрешённые часы">{{ icon("clock") }} {{ s.window }}</span>
+  </div>
+{%- endmacro %}
+
+{% macro now_line(s) -%}
+  <div class="now">
+  {% if not s.child_logged_in %}
+    {{ icon("moon") }}<span>Ребёнок не вошёл в систему</span>
+  {% elif s.idle %}
+    {{ icon("moon") }}<span>Не за компьютером: нет активности</span>
+  {% elif s.app %}
+    {{ icon("window") }}<span class="title"><b>{{ s.app }}</b>{% if s.title %} · {{ s.title }}{% endif %}</span>
+  {% else %}
+    {{ icon("monitor") }}<span>Ребёнок за компьютером</span>
+  {% endif %}
+  </div>
+{%- endmacro %}

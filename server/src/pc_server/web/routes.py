@@ -27,6 +27,10 @@ templates.env.globals.update(
     alert_kinds=present.ALERT_KINDS,
     command_label=lambda action: present.COMMAND_LABELS.get(action, action),
     is_online=devices.is_online,
+    relative_time=present.relative_time,
+    meter=present.meter,
+    bar_pct=present.bar_pct,
+    event_icon=lambda kind: present.EVENT_ICONS.get(kind, "dot"),
 )
 
 router = APIRouter(include_in_schema=False)

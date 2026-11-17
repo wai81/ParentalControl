@@ -54,7 +54,8 @@ async def test_device_list_and_page(client: AsyncClient, db_session):
     await db_session.commit()
     await login(client, db_session)
     page = await client.get("/")
-    assert "Компьютер Маши" in page.text and "Осталось 1 ч 15 мин" in page.text
+    assert "Компьютер Маши" in page.text and "1 ч 15 мин <span class=\"unit\">осталось" in page.text
+    assert 'style="width: 37.5%"' in page.text  # meter: 45 of 120 minutes used
     page = await client.get(f"/devices/{device.id}")
     assert page.status_code == 200 and "minecraft.exe" in page.text
 
@@ -118,3 +119,20 @@ async def test_delete_device(client: AsyncClient, db_session):
     r = await client.post(f"/devices/{device.id}/delete", data={"csrf": csrf})
     assert r.status_code == 303
     assert await db_session.get(Device, device.id) is None
+
+
+def test_meter_levels_and_relative_time():
+    from datetime import UTC, datetime, timedelta
+
+    from pc_server.web.present import meter, relative_time
+
+    assert meter({"allowed": True, "limit_minutes": 120, "used_minutes": 30,
+                  "remaining_minutes": 90}) == {"pct": 25.0, "level": "good"}
+    assert meter({"allowed": True, "limit_minutes": 60, "used_minutes": 50,
+                  "remaining_minutes": 10})["level"] == "warning"
+    assert meter({"allowed": False, "limit_minutes": 0, "used_minutes": 5})["pct"] == 100
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=UTC)
+    assert relative_time(now - timedelta(seconds=10), now) == "только что"
+    assert relative_time(now - timedelta(minutes=5), now) == "5 мин назад"
+    assert relative_time(now - timedelta(hours=3), now) == "3 ч назад"
+    assert relative_time(None) == "никогда"

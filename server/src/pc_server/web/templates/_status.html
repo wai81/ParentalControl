@@ -1,21 +1,18 @@
+{% from "_icons.html" import icon %}
+{% from "_time.html" import time_left, now_line %}
 {% set s = status %}
 <div class="row">
-  <span class="dot {{ 'on' if is_online(device) else 'off' }}">{{ 'в сети' if is_online(device) else 'не в сети' }}</span>
-  <span class="muted small">связь: {{ local_time(device.last_seen_at, '%d.%m %H:%M:%S') }}</span>
+  <span class="pill {{ 'on' if is_online(device) else '' }}">{{ "в сети" if is_online(device) else "не в сети" }}</span>
+  <span class="muted small">связь: {{ relative_time(device.last_seen_at) }}</span>
 </div>
 {% if s %}
-  <div class="big {{ '' if s.allowed else 'bad' }}">
-    {% if s.allowed %}Осталось {{ minutes(s.remaining_minutes) }}{% else %}{{ s.reason or 'Сейчас нельзя' }}{% endif %}
-  </div>
-  <p>Сегодня {{ minutes(s.used_minutes) }} из {{ minutes(s.limit_minutes) }}{% if s.bonus_minutes %} (бонус {{ '%+d' % s.bonus_minutes }} мин){% endif %}. Разрешено {{ s.window }}.
-  {% if s.blocked %}<b class="bad">Заблокировано до конца дня.</b>{% endif %}</p>
-  <p>
-  {% if s.child_logged_in %}
-    {% if s.idle %}Ребёнок не за компьютером (нет активности).
-    {% elif s.app %}Сейчас: <b>{{ s.app }}</b>{% if s.title %} — {{ s.title }}{% endif %}
-    {% else %}Ребёнок вошёл в систему.{% endif %}
-  {% else %}Ребёнок не вошёл в систему.{% endif %}
-  </p>
+  {{ time_left(s) }}
+  {{ now_line(s) }}
+  {% if s.bonus_minutes %}
+    <div class="facts">
+      <div class="fact"><div class="k">Бонус сегодня</div><div class="v">{{ '%+d' % s.bonus_minutes }} мин</div></div>
+    </div>
+  {% endif %}
 {% else %}
-  <p class="muted">Компьютер ещё не присылал данных.</p>
+  <p class="muted">Компьютер ещё не присылал данных. Он появится здесь через несколько секунд после подключения.</p>
 {% endif %}

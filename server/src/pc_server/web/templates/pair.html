@@ -1,13 +1,33 @@
 {% extends "base.html" %}
 {% block title %}Подключение компьютера{% endblock %}
 {% block content %}
-<section class="card">
+<a class="back" href="/">{{ icon("back") }}Все компьютеры</a>
+<section class="card" style="max-width:720px">
   <h1>Подключение компьютера</h1>
-  <p>Код подключения (действует до {{ local_time(code.expires_at, '%H:%M') }}):</p>
-  <p class="code">{{ code.code }}</p>
-  <p>На компьютере ребёнка, где уже установлен агент, откройте PowerShell <b>от имени администратора</b> и выполните:</p>
-  <pre>&amp; "C:\Program Files\ParentalControl\agent\pcagent.exe" connect --server {{ server_url }} --code {{ code.code }} --name "Компьютер Маши"</pre>
-  <p class="muted">Вместо «Компьютер Маши» напишите любое понятное вам название. Код одноразовый.</p>
-  <p><a href="/">К списку компьютеров</a></p>
+  <p class="muted">Код одноразовый и действует до {{ local_time(code.expires_at, "%H:%M") }}.</p>
+  <div aria-label="Код подключения" class="code">{{ code.code }}</div>
+  <ol class="steps">
+    <li>На компьютере ребёнка должен быть установлен агент (файл INSTALL.txt в архиве агента).</li>
+    <li>Откройте там PowerShell <b>от имени администратора</b> и выполните команду. Название в кавычках можно изменить.</li>
+  </ol>
+  <div class="cmd">
+    <pre id="cmd">&amp; "C:\Program Files\ParentalControl\agent\pcagent.exe" connect --server {{ server_url }} --code {{ code.code }} --name "Компьютер ребёнка"</pre>
+    <button type="button" id="copy">{{ icon("copy") }}<span>Копировать команду</span></button>
+  </div>
+  <script>
+    // navigator.clipboard needs https; on http://192.168.x.x fall back to selecting the text.
+    document.getElementById("copy").addEventListener("click", async (event) => {
+      const button = event.currentTarget, pre = document.getElementById("cmd");
+      let copied = false;
+      try { await navigator.clipboard.writeText(pre.innerText); copied = true; } catch (e) {}
+      if (!copied) {
+        const range = document.createRange(); range.selectNodeContents(pre);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        copied = document.execCommand("copy");
+      }
+      button.lastElementChild.textContent = copied ? "Скопировано" : "Выделено: нажмите Ctrl+C";
+    });
+  </script>
+  <p class="muted small" style="margin-top:16px">Через несколько секунд после команды компьютер появится в списке «в сети».</p>
 </section>
 {% endblock %}
