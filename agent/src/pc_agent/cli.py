@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import contextlib
 import ctypes
+import getpass
 import os
+import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
@@ -89,18 +91,81 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_password(args: argparse.Namespace, prompt: str = "Пароль родителя: ") -> str:
+    if getattr(args, "password_stdin", False):
+        return sys.stdin.readline().rstrip("\r\n")
+    return getpass.getpass(prompt)
+
+
+def _via_service(args: argparse.Namespace, message: dict[str, object]) -> int:
+    """Run a parent command through the service with the parent's password.
+
+    Used when this account cannot write the agent's data (e.g. from the child's
+    account), or with --via-service.
+    """
+    from pc_agent.pipe_client import send_command
+
+    reply = send_command({**message, "password": _read_password(args)})
+    print(reply.get("message", reply))
+    return 0 if reply.get("ok") else 1
+
+
+def _write_directly(args: argparse.Namespace, change) -> bool:  # noqa: ANN001
+    """Apply a change to the database; False if this account may not write it."""
+    if args.via_service:
+        return False
+    try:
+        with Store(_paths(args).db) as store:
+            change(store)
+        return True
+    except (PermissionError, sqlite3.OperationalError):
+        return False
+
+
 def cmd_bonus(args: argparse.Namespace) -> int:
-    with Store(_paths(args).db) as store:
-        store.add_bonus(date.today(), args.minutes)
-    print(f"Бонус на сегодня изменён на {args.minutes:+d} мин.")
-    return 0
+    if _write_directly(args, lambda store: store.add_bonus(date.today(), args.minutes)):
+        print(f"Время на сегодня изменено на {args.minutes:+d} мин.")
+        return 0
+    return _via_service(args, {"action": "bonus", "minutes": args.minutes})
 
 
 def cmd_block(args: argparse.Namespace, blocked: bool) -> int:
-    with Store(_paths(args).db) as store:
-        store.set_blocked(date.today(), blocked)
-    print("Компьютер заблокирован до конца дня." if blocked else "Блокировка на сегодня снята.")
+    if _write_directly(args, lambda store: store.set_blocked(date.today(), blocked)):
+        print("Компьютер заблокирован до конца дня." if blocked else "Блокировка на сегодня снята.")
+        return 0
+    return _via_service(args, {"action": "block" if blocked else "unblock"})
+
+
+def cmd_set_password(args: argparse.Namespace) -> int:
+    from pc_agent.secret import MIN_LENGTH, save_password
+
+    paths = _paths(args)
+    admin = sys.platform == "win32" and bool(ctypes.windll.shell32.IsUserAnAdmin())
+    if args.data_dir is None and not admin:
+        print("Нужны права администратора: запустите терминал от имени администратора.")
+        return 1
+    first = _read_password(args, f"Новый пароль родителя (не короче {MIN_LENGTH} символов): ")
+    second = first if args.password_stdin else getpass.getpass("Повторите пароль: ")
+    if first != second:
+        print("Пароли не совпадают.")
+        return 1
+    paths.data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        save_password(paths.data_dir, first, restrict=admin)
+    except ValueError as exc:
+        print(f"Пароль не сохранён: {exc}.")
+        return 1
+    if not admin:
+        print("Внимание: без прав администратора файл с паролем не защищён от чтения.")
+    print("Пароль родителя сохранён. Теперь управлять можно и из учётной записи ребёнка: "
+          "значок в трее > Родитель.")
     return 0
+
+
+def cmd_parent(args: argparse.Namespace) -> int:
+    from pc_agent.dialog import run_dialog
+
+    return run_dialog()
 
 
 def cmd_events(args: argparse.Namespace) -> int:
@@ -160,14 +225,27 @@ def build_parser() -> argparse.ArgumentParser:
         func=cmd_status)
     sub.add_parser("check-rules", help="проверить rules.json").set_defaults(func=cmd_check_rules)
 
-    p = sub.add_parser("bonus", help="добавить (или убавить) минуты на сегодня")
+    def parent_command(name: str, help_text: str) -> argparse.ArgumentParser:
+        cmd = sub.add_parser(name, help=help_text)
+        cmd.add_argument("--via-service", action="store_true",
+                         help="через службу с паролем родителя "
+                              "(так работает без прав администратора)")
+        cmd.add_argument("--password-stdin", action="store_true", help=argparse.SUPPRESS)
+        return cmd
+
+    p = parent_command("bonus", "добавить (или убавить) минуты на сегодня")
     p.add_argument("minutes", type=int)
     p.set_defaults(func=cmd_bonus)
-
-    sub.add_parser("block", help="заблокировать до конца дня").set_defaults(
+    parent_command("block", "заблокировать до конца дня").set_defaults(
         func=lambda a: cmd_block(a, True))
-    sub.add_parser("unblock", help="снять блокировку на сегодня").set_defaults(
+    parent_command("unblock", "снять блокировку на сегодня").set_defaults(
         func=lambda a: cmd_block(a, False))
+
+    p = sub.add_parser("set-password", help="задать пароль родителя (от имени администратора)")
+    p.add_argument("--password-stdin", action="store_true", help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_set_password)
+    sub.add_parser("parent", help="окно родителя: добавить время, заблокировать").set_defaults(
+        func=cmd_parent)
 
     p = sub.add_parser("events", help="журнал событий")
     p.add_argument("-n", type=int, default=50)

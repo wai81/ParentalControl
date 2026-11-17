@@ -91,6 +91,22 @@ try {
     Check ($agentLog -match 'Helper подключился') 'helper connected to the service pipe'
     & $installed status | Select-Object -Last 4
 
+    Step 'parent password'
+    'test-pass-123' | & $installed set-password --password-stdin | Out-Host
+    $keyFile = Join-Path $data 'parent.key'
+    Check (Test-Path $keyFile) 'parent.key written'
+    $keyAcl = (icacls $keyFile) -join "`n"
+    Check (-not ($keyAcl -match 'BUILTIN\\(Users|Пользователи)')) 'parent.key is not readable by Users'
+    Check (-not ((Get-Content $keyFile -Raw) -match 'test-pass-123')) 'password is not stored in clear text'
+    'wrong-pass' | & $installed bonus 5 --via-service --password-stdin | Out-Host
+    Check ($LASTEXITCODE -eq 1) 'wrong password refused by the service'
+    'test-pass-123' | & $installed bonus 5 --via-service --password-stdin | Out-Host
+    Check ($LASTEXITCODE -eq 0) 'bonus accepted by the service with the right password'
+    $statusText = (& $installed status) -join "`n"
+    Check ($statusText -match '\+5') 'bonus +5 visible in status'
+    $events = (& $installed events -n 20) -join "`n"
+    Check ($events -match 'wrong_password' -and $events -match 'parent_command') 'password events logged'
+
     Step 'helper restarted after it is killed'
     Stop-Process -Id $helper.Id -Force
     $helper2 = $null

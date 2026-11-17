@@ -19,6 +19,8 @@ class EventKind(StrEnum):
     HELPER_STARTED = "helper_started"
     HELPER_STOPPED = "helper_stopped"
     TIMEZONE_CHANGED = "timezone_changed"
+    PARENT_COMMAND = "parent_command"
+    WRONG_PASSWORD = "wrong_password"
     WARNING = "warning"
     SESSION_ENDED = "session_ended"
     RULES_ERROR = "rules_error"

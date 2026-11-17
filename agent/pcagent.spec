@@ -11,7 +11,8 @@ a = Analysis(
     # win32timezone is imported dynamically by pywin32 service code.
     # pystray picks its Windows backend at runtime.
     hiddenimports=["win32timezone", "pystray._win32"],
-    excludes=["tkinter", "unittest", "pydoc", "test"],
+    # tkinter stays: the parent window uses it.
+    excludes=["unittest", "pydoc", "test"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

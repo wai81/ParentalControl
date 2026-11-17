@@ -10,6 +10,8 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import logging
+import subprocess
+import sys
 import threading
 import time
 from ctypes import wintypes
@@ -19,13 +21,12 @@ import psutil
 import pywintypes
 import win32api
 import win32event
-import win32file
 import win32gui
-import win32pipe
 import win32process
 import winerror
 
-from pc_agent.activity import PIPE_NAME, REPORT_INTERVAL, decode, encode
+from pc_agent.activity import PIPE_NAME, REPORT_INTERVAL
+from pc_agent.pipe_client import PipeClient
 
 log = logging.getLogger(__name__)
 
@@ -82,40 +83,6 @@ def foreground_window() -> tuple[str | None, str]:
     return name, title
 
 
-# ---------- connection to the service ----------
-
-
-class PipeClient:
-    def __init__(self, name: str = PIPE_NAME) -> None:
-        self._name = name
-        self._handle = None
-
-    def _connect(self) -> None:
-        handle = win32file.CreateFile(
-            self._name, win32file.GENERIC_READ | win32file.GENERIC_WRITE,
-            0, None, win32file.OPEN_EXISTING, 0, None,
-        )
-        win32pipe.SetNamedPipeHandleState(handle, win32pipe.PIPE_READMODE_MESSAGE, None, None)
-        self._handle = handle
-
-    def close(self) -> None:
-        if self._handle is not None:
-            self._handle.Close()
-            self._handle = None
-
-    def request(self, message: dict[str, Any]) -> dict[str, Any] | None:
-        """Send a report and return the service status, or None if the service is away."""
-        try:
-            if self._handle is None:
-                self._connect()
-            win32file.WriteFile(self._handle, encode(message))
-            _, data = win32file.ReadFile(self._handle, 64 * 1024)
-            return decode(data)
-        except (pywintypes.error, ValueError):
-            self.close()
-            return None
-
-
 # ---------- tray icon ----------
 
 
@@ -146,6 +113,18 @@ def describe(status: dict[str, Any] | None) -> tuple[str, str]:
     return text, color
 
 
+def open_parent_window() -> None:
+    """Start `pcagent parent` as a separate process (no console window)."""
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "parent"]
+    else:
+        command = [sys.executable, "-m", "pc_agent", "parent"]
+    try:
+        subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW)
+    except OSError:
+        log.exception("Не удалось открыть окно родителя")
+
+
 class Tray:
     def __init__(self) -> None:
         import pystray
@@ -155,7 +134,11 @@ class Tray:
             "ParentalControl",
             _icon_image(self._color),
             self._text,
-            menu=pystray.Menu(pystray.MenuItem(lambda _item: self._text, None, enabled=False)),
+            menu=pystray.Menu(
+                pystray.MenuItem(lambda _item: self._text, None, enabled=False),
+                # Default item: a click on the icon opens the parent window.
+                pystray.MenuItem("Родитель...", lambda: open_parent_window(), default=True),
+            ),
         )
 
     def update(self, status: dict[str, Any] | None) -> None:
@@ -183,7 +166,7 @@ class Tray:
 
 
 def _report_loop(stop: threading.Event, tray: Tray | None) -> None:
-    client = PipeClient()
+    client = PipeClient(PIPE_NAME)
     last_contact = time.monotonic()
     while not stop.is_set():
         try:

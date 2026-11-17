@@ -68,9 +68,10 @@ def run_agent(
     stop: threading.Event | None = None,
     console: bool = False,
 ) -> None:
-    from pc_agent.activity import ActivityHub
+    from pc_agent.activity import PIPE_NAME, ActivityHub
+    from pc_agent.control import CONTROL_PIPE_NAME, ControlHandler
     from pc_agent.engine import Agent
-    from pc_agent.pipe_server import PipeServer
+    from pc_agent.pipe_server import PipeServer, report_handler
     from pc_agent.platform_win import DryRunPlatform, WindowsPlatform
 
     paths.data_dir.mkdir(parents=True, exist_ok=True)
@@ -85,8 +86,14 @@ def run_agent(
         rules = RulesFile(paths.rules, on_error=rules_error)
         platform = DryRunPlatform() if dry_run else WindowsPlatform()
         hub = ActivityHub()
-        pipe_server = PipeServer(hub)
-        pipe_server.start()
+        servers = [
+            PipeServer(PIPE_NAME, report_handler(hub), accept=hub.accepts, label="Helper",
+                       max_clients=2),
+            PipeServer(CONTROL_PIPE_NAME, ControlHandler(paths.data_dir).handle,
+                       label="Команда родителя"),
+        ]
+        for server in servers:
+            server.start()
         agent = Agent(platform, store, rules, hub)
 
         log.info("Агент запущен (данные: %s, dry-run: %s)", paths.data_dir, dry_run)
@@ -114,6 +121,7 @@ def run_agent(
                 if stop.wait(interval):
                     break
         finally:
-            pipe_server.stop()
+            for server in servers:
+                server.stop()
             store.add_event(Event(kind=EventKind.AGENT_STOPPED))
             log.info("Агент остановлен")
