@@ -1,0 +1,32 @@
+[project]
+name = "parental-control"
+version = "0.1.0"
+description = "Parental control for Windows: agent, server and shared protocol"
+requires-python = ">=3.12"
+dependencies = ["pc-shared", "pc-agent"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["shared", "agent"]
+
+[tool.uv.sources]
+pc-shared = { workspace = true }
+pc-agent = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["agent/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pc_agent", "pc_shared"]

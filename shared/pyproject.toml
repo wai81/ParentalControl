@@ -1,0 +1,10 @@
+[project]
+name = "pc-shared"
+version = "0.1.0"
+description = "Shared models (rules, events) for the parental control agent and server"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

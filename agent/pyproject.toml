@@ -1,0 +1,20 @@
+[project]
+name = "pc-agent"
+version = "0.1.0"
+description = "Parental control agent for Windows (time limits, app control, activity log)"
+requires-python = ">=3.12"
+dependencies = [
+    "pc-shared",
+    "psutil>=6.0",
+    "pywin32>=308; sys_platform == 'win32'",
+]
+
+[project.scripts]
+pcagent = "pc_agent.cli:main"
+
+[tool.uv.sources]
+pc-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
