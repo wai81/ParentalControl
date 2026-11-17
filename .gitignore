@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build output (PyInstaller / Nuitka)
+build/
+dist/
+*.spec.bak
+*.build/
+*.dist/
+*.onefile-build/
+
+# Local data and secrets
+.env
+*.env.local
+*.db
+*.sqlite
+*.sqlite3
+*.log
+data/
+secrets/
+
+# Browser extension packaging
+*.crx
+*.pem
+extension/*.zip
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
