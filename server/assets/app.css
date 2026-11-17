@@ -20,16 +20,32 @@
   @media (prefers-color-scheme: dark) {
     :root { --color-series: #3987e5; --color-brand: #3987e5; color-scheme: dark; }
   }
-  body { @apply bg-zinc-100 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100; }
+  /* Page background: soft "mesh" glow, colors taken from the reference picture:
+     bright violet on the left, indigo-blue top right, deep plum fading to near black bottom right.
+     Same in both themes. Text outside cards is white; cards set their own text color. */
+  body {
+    @apply text-white antialiased;
+    background-color: #46057d;
+    background-image:
+      radial-gradient(ellipse 60% 70% at 22% 35%, #8f3bf3 0%, rgb(143 59 243 / 0) 70%),
+      radial-gradient(ellipse 50% 45% at 100% 0%, #3a14a8 0%, rgb(58 20 168 / 0) 75%),
+      radial-gradient(ellipse 65% 70% at 100% 100%, #0f001d 0%, #1f0042 40%, rgb(31 0 66 / 0) 80%),
+      radial-gradient(ellipse 45% 50% at 0% 100%, #571bbb 0%, rgb(87 27 187 / 0) 75%),
+      linear-gradient(135deg, #812fda 0%, #5e0eae 50%, #2a0458 100%);
+    background-attachment: fixed;
+  }
   a { @apply text-brand hover:underline; }
   :focus-visible { @apply outline-2 outline-offset-2 outline-brand; }
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl bg-white p-5 shadow-sm ring-1 ring-zinc-950/5
-           dark:bg-zinc-900 dark:shadow-none dark:ring-white/10;
+    @apply rounded-2xl bg-white p-5 text-zinc-900 shadow-lg shadow-indigo-950/40 ring-1 ring-white/10
+           dark:bg-zinc-900/90 dark:text-zinc-100 dark:shadow-black/30 dark:ring-white/10;
   }
+  /* Text and links placed directly on the gradient. */
+  .on-bg-muted { @apply text-white/80; }
+  .back-link { @apply mb-2 inline-flex items-center gap-1 text-sm text-white/80 hover:text-white hover:no-underline; }
   .card-title { @apply mb-4 text-base font-semibold; }
   .btn {
     @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2

@@ -27,7 +27,7 @@
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 {% for d in devices %}
   {% set s = d.status or {} %}
-  <a href="/devices/{{ d.id }}" class="card group block min-w-0 text-inherit transition hover:no-underline hover:ring-brand/50 dark:hover:ring-brand/50">
+  <a href="/devices/{{ d.id }}" class="card group block min-w-0 transition hover:no-underline hover:ring-brand/50 dark:hover:ring-brand/50">
     <div class="flex items-center justify-between gap-3">
       <strong class="truncate font-semibold text-zinc-900 group-hover:text-brand dark:text-zinc-100">{{ d.name }}</strong>
       {{ online_pill(d) }}
