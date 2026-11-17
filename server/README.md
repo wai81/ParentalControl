@@ -158,4 +158,29 @@ uv run pc_server serve --port 8000
 uv run pytest server/tests
 ```
 
+### Стили (Tailwind CSS)
+
+Страницы оформлены классами Tailwind CSS v4 прямо в шаблонах (`src/pc_server/web/templates`).
+Исходник стилей лежит в `assets/app.css`: там тема (цвета) и общие компоненты (`.card`, `.btn`, `.input`).
+Собранный `src/pc_server/web/static/app.css` хранится в репозитории и уходит в архив сервера,
+поэтому на Raspberry Pi Node.js не нужен.
+
+После изменения классов в шаблонах пересоберите CSS. Нужен Node.js, команды выполняются из папки `server`:
+
+```bash
+npm ci
+```
+
+```bash
+npm run build:css
+```
+
+Пересборка при каждом сохранении шаблона:
+
+```bash
+npm run watch:css
+```
+
+`scripts/package-server.py` пересобирает CSS сам, если найдёт `npm`.
+
 Таблицы создаются при запуске. Когда схема начнёт меняться, понадобятся миграции Alembic.

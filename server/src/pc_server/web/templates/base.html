@@ -6,25 +6,30 @@
   <meta name="theme-color" content="#2a78d6">
   <title>{% block title %}Родительский контроль{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', path='favicon.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body>
-  <header class="top">
-    <div class="top-inner">
-      <a class="brand" href="/"><span class="brand-mark">{{ icon("clock") }}</span>Родительский контроль</a>
-      <span class="spacer"></span>
+<body class="min-h-screen font-sans text-[15px] leading-relaxed">
+  <header class="sticky top-0 z-10 border-b border-zinc-950/5 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-zinc-900/80">
+    <div class="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5">
+      <a href="/" class="flex items-center gap-2.5 font-semibold text-zinc-900 hover:no-underline dark:text-zinc-100">
+        <span class="grid size-8 place-items-center rounded-lg bg-brand text-white">{{ icon("clock") }}</span>
+        Родительский контроль
+      </a>
+      <span class="flex-1"></span>
       {% if request.session.get('parent') %}
-      <form method="post" action="/logout" class="inline">
+      <form method="post" action="/logout">
         <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
-        <button class="link">{{ icon("logout") }}<span>Выйти</span></button>
+        <button class="btn btn-ghost min-h-9 px-3 font-medium">{{ icon("logout") }}<span>Выйти</span></button>
       </form>
       {% endif %}
     </div>
   </header>
-  <main>
+  <main class="mx-auto max-w-5xl px-4 pt-6 pb-12">
     {% if flash %}
-      <div class="flash {{ 'ok' if flash.ok else 'bad' }}" role="status">
+      <div role="status" class="mb-5 flex items-start gap-3 rounded-xl px-4 py-3 text-sm ring-1
+        {{ 'bg-emerald-50 text-emerald-900 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-400/20' if flash.ok
+           else 'bg-red-50 text-red-900 ring-red-600/20 dark:bg-red-500/10 dark:text-red-200 dark:ring-red-400/20' }}">
         {{ icon("check" if flash.ok else "alert") }}<span>{{ flash.text }}</span>
       </div>
     {% endif %}

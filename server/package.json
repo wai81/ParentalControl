@@ -1,0 +1,13 @@
+{
+  "name": "pc-server-ui",
+  "private": true,
+  "description": "Builds the web panel CSS (Tailwind) into src/pc_server/web/static/app.css",
+  "scripts": {
+    "build:css": "tailwindcss -i assets/app.css -o src/pc_server/web/static/app.css --minify",
+    "watch:css": "tailwindcss -i assets/app.css -o src/pc_server/web/static/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "tailwindcss": "4.3.5"
+  }
+}

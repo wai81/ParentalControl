@@ -1,174 +1,177 @@
 {% extends "base.html" %}
 {% block title %}{{ device.name }}{% endblock %}
 {% block content %}
-<a class="back" href="/">{{ icon("back") }}Все компьютеры</a>
-<div class="page-head"><h1>{{ device.name }}</h1></div>
+<a href="/" class="mb-2 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-brand hover:no-underline dark:text-zinc-400">{{ icon("back", "size-4") }}Все компьютеры</a>
+<h1 class="mb-6 text-2xl font-bold tracking-tight">{{ device.name }}</h1>
 
-<div class="two-col">
+<div class="grid gap-4 md:grid-cols-2 [&>*]:min-w-0">
   <section class="card" id="status" data-url="/devices/{{ device.id }}/status" aria-live="polite">
     {% include "_status.html" %}
   </section>
 
   <section class="card">
-    <h2>Управление</h2>
-    <div class="actions">
+    <h2 class="card-title">Управление</h2>
+    <div class="grid grid-cols-2 gap-2">
     {% for m in (15, 30, 60, -15) %}
-      <form method="post" action="/devices/{{ device.id }}/command">
+      <form method="post" action="/devices/{{ device.id }}/command" class="contents">
         <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
         <input type="hidden" name="action" value="bonus"><input type="hidden" name="minutes" value="{{ m }}">
-        <button>{{ icon("plus" if m > 0 else "minus") }}{{ m|abs }} мин</button>
+        <button class="btn w-full">{{ icon("plus" if m > 0 else "minus", "size-4") }}{{ m|abs }} мин</button>
       </form>
     {% endfor %}
-      <form method="post" action="/devices/{{ device.id }}/command">
+      <form method="post" action="/devices/{{ device.id }}/command" class="contents">
         <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
         <input type="hidden" name="action" value="block">
-        <button class="danger wide">{{ icon("lock") }}Заблокировать до конца дня</button>
+        <button class="btn btn-danger col-span-2 w-full">{{ icon("lock", "size-4") }}Заблокировать до конца дня</button>
       </form>
-      <form method="post" action="/devices/{{ device.id }}/command">
+      <form method="post" action="/devices/{{ device.id }}/command" class="contents">
         <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
         <input type="hidden" name="action" value="unblock">
-        <button class="wide">{{ icon("unlock") }}Снять блокировку</button>
+        <button class="btn col-span-2 w-full">{{ icon("unlock", "size-4") }}Снять блокировку</button>
       </form>
     </div>
     {% if commands %}
-    <h3>Последние команды</h3>
-    <table>
+    <h3 class="mt-5 mb-1 text-sm font-semibold text-zinc-500">Последние команды</h3>
+    <ul class="divide-y divide-zinc-950/5 text-sm dark:divide-white/10">
     {% for c in commands[:5] %}
-      <tr>
-        <td class="nowrap muted small">{{ local_time(c.created_at) }}</td>
-        <td>{{ command_label(c.action) }}{% if c.minutes %} {{ '%+d' % c.minutes }} мин{% endif %}</td>
-        <td class="num">
-          {% if c.done_at %}<span class="status-tag {{ 'done' if c.ok else 'fail' }}">{{ "выполнено" if c.ok else "ошибка" }}</span>
-          {% elif c.delivered_at %}<span class="status-tag wait">доставлено</span>
-          {% else %}<span class="status-tag wait">ждёт подключения</span>{% endif %}
-        </td>
-      </tr>
+      <li class="flex items-center gap-3 py-2">
+        <span class="w-20 shrink-0 text-xs text-zinc-500 tabular-nums">{{ local_time(c.created_at) }}</span>
+        <span class="min-w-0 flex-1">{{ command_label(c.action) }}{% if c.minutes %} {{ '%+d' % c.minutes }} мин{% endif %}</span>
+        {% if c.done_at %}
+          <span class="text-xs font-semibold {{ 'text-good' if c.ok else 'text-crit' }}">{{ "выполнено" if c.ok else "ошибка" }}</span>
+        {% elif c.delivered_at %}<span class="text-xs font-semibold text-zinc-500">доставлено</span>
+        {% else %}<span class="text-xs font-semibold text-zinc-500">ждёт подключения</span>{% endif %}
+      </li>
     {% endfor %}
-    </table>
+    </ul>
     {% endif %}
   </section>
-</div>
 
-<div class="two-col" style="margin-top:16px">
   <section class="card">
-    <h2>Программы сегодня</h2>
+    <h2 class="card-title">Программы сегодня</h2>
     {% if apps %}
       {% set top = apps | map(attribute="minutes") | max %}
-      <ul class="bars">
+      <ul class="space-y-1">
       {% for a in apps[:10] %}
-        <li title="{{ a.app }}: {{ minutes(a.minutes) }}">
-          <span class="name">{{ a.app }}</span>
-          <span class="track"><span class="bar" style="width: {{ bar_pct(a.minutes, top) }}%"></span></span>
-          <span class="val">{{ minutes(a.minutes) }}</span>
+        <li class="grid grid-cols-[minmax(90px,38%)_1fr_auto] items-center gap-3 rounded-lg px-1 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+            title="{{ a.app }}: {{ minutes(a.minutes) }}">
+          <span class="truncate text-sm">{{ a.app }}</span>
+          <span class="h-2.5"><span class="block h-full min-w-[3px] rounded-r bg-series" style="width: {{ bar_pct(a.minutes, top) }}%"></span></span>
+          <span class="text-right text-sm text-zinc-500 tabular-nums">{{ minutes(a.minutes) }}</span>
         </li>
       {% endfor %}
       </ul>
-    {% else %}<p class="muted">Пока нет данных за сегодня.</p>{% endif %}
+    {% else %}<p class="text-sm text-zinc-500">Пока нет данных за сегодня.</p>{% endif %}
   </section>
 
   <section class="card">
-    <h2>По дням</h2>
+    <h2 class="card-title">По дням</h2>
     {% if history %}
       {% set days = history | reverse | list %}
       {% set top = [days | map(attribute="used_minutes") | max, 1] | max %}
-      <div class="columns" role="img" aria-label="Время за компьютером по дням">
+      <div class="flex h-32 items-end gap-1.5 border-b border-zinc-950/10 pt-5 dark:border-white/10" role="img" aria-label="Время за компьютером по дням">
       {% for d in days %}
-        <div class="col" tabindex="0">
-          <span class="tip">{{ d.day.strftime("%d.%m") }}: {{ minutes(d.used_minutes) }}{% if d.bonus_minutes %}, бонус {{ '%+d' % d.bonus_minutes }}{% endif %}{% if d.blocked %}, заблокирован{% endif %}</span>
-          <span class="fill" style="height: {{ bar_pct(d.used_minutes, top) }}%"></span>
+        <div class="group relative flex h-full flex-1 flex-col justify-end" tabindex="0">
+          <span class="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 rounded-md bg-zinc-900 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition group-hover:opacity-100 group-focus:opacity-100 dark:bg-zinc-100 dark:text-zinc-900">
+            {{ d.day.strftime("%d.%m") }}: {{ minutes(d.used_minutes) }}{% if d.bonus_minutes %}, бонус {{ '%+d' % d.bonus_minutes }}{% endif %}{% if d.blocked %}, заблокирован{% endif %}
+          </span>
+          <span class="min-h-0.5 rounded-t bg-series group-hover:brightness-110" style="height: {{ bar_pct(d.used_minutes, top) }}%"></span>
         </div>
       {% endfor %}
       </div>
-      <div class="col-labels">{% for d in days %}<span>{{ d.day.strftime("%d") }}</span>{% endfor %}</div>
-      <details>
-        <summary>Таблицей</summary>
-        <table>
-          <tr><th>День</th><th class="num">Время</th><th></th></tr>
+      <div class="mt-1.5 flex gap-1.5">{% for d in days %}<span class="flex-1 text-center text-[11px] text-zinc-500">{{ d.day.strftime("%d") }}</span>{% endfor %}</div>
+      <details class="mt-3 text-sm">
+        <summary class="cursor-pointer text-zinc-500">Таблицей</summary>
+        <table class="mt-2 w-full">
+          <tr class="text-left text-xs text-zinc-500"><th class="py-1 font-medium">День</th><th class="py-1 text-right font-medium">Время</th><th></th></tr>
           {% for d in history %}
-          <tr><td>{{ d.day.strftime("%d.%m") }}</td><td class="num">{{ minutes(d.used_minutes) }}</td>
-              <td class="muted small">{% if d.bonus_minutes %}бонус {{ '%+d' % d.bonus_minutes }} мин{% endif %}{% if d.blocked %} заблокирован{% endif %}</td></tr>
+          <tr class="border-t border-zinc-950/5 dark:border-white/10">
+            <td class="py-1.5">{{ d.day.strftime("%d.%m") }}</td>
+            <td class="py-1.5 text-right tabular-nums">{{ minutes(d.used_minutes) }}</td>
+            <td class="py-1.5 pl-3 text-xs text-zinc-500">{% if d.bonus_minutes %}бонус {{ '%+d' % d.bonus_minutes }} мин{% endif %}{% if d.blocked %} заблокирован{% endif %}</td>
+          </tr>
           {% endfor %}
         </table>
       </details>
-    {% else %}<p class="muted">Пока нет данных.</p>{% endif %}
+    {% else %}<p class="text-sm text-zinc-500">Пока нет данных.</p>{% endif %}
   </section>
 </div>
 
-<section class="card" id="rules" style="margin-top:16px">
-  <h2>Правила</h2>
+<section class="card mt-4" id="rules">
+  <h2 class="card-title">Правила</h2>
   <form method="post" action="/devices/{{ device.id }}/rules">
     <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
-    <div class="form-grid">
-      <label class="full">Учётная запись ребёнка в Windows
-        <input name="child_user" value="{{ rules.child_user }}" autocomplete="off"></label>
-      <fieldset><legend>Будни</legend>
-        <div class="fieldset-row">
-          <label>Минут в день <input type="number" name="wd_limit" min="0" max="1440" value="{{ rules.weekdays.limit_minutes }}"></label>
-          <label>С <input name="wd_start" value="{{ rules.weekdays.window.start }}" inputmode="numeric"></label>
-          <label>До <input name="wd_end" value="{{ rules.weekdays.window.end }}" inputmode="numeric"></label>
+    <div class="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+      <label class="label sm:col-span-2">Учётная запись ребёнка в Windows
+        <input class="input" name="child_user" value="{{ rules.child_user }}" autocomplete="off"></label>
+      {% for prefix, title, day in (("wd", "Будни", rules.weekdays), ("we", "Выходные", rules.weekends)) %}
+      <fieldset class="rounded-xl p-4 ring-1 ring-zinc-950/10 dark:ring-white/10">
+        <legend class="px-1 text-sm font-semibold">{{ title }}</legend>
+        <div class="grid grid-cols-[1.2fr_1fr_1fr] gap-3">
+          <label class="label">Минут в день <input class="input" type="number" name="{{ prefix }}_limit" min="0" max="1440" value="{{ day.limit_minutes }}"></label>
+          <label class="label">С <input class="input" name="{{ prefix }}_start" value="{{ day.window.start }}" inputmode="numeric"></label>
+          <label class="label">До <input class="input" name="{{ prefix }}_end" value="{{ day.window.end }}" inputmode="numeric"></label>
         </div>
       </fieldset>
-      <fieldset><legend>Выходные</legend>
-        <div class="fieldset-row">
-          <label>Минут в день <input type="number" name="we_limit" min="0" max="1440" value="{{ rules.weekends.limit_minutes }}"></label>
-          <label>С <input name="we_start" value="{{ rules.weekends.window.start }}" inputmode="numeric"></label>
-          <label>До <input name="we_end" value="{{ rules.weekends.window.end }}" inputmode="numeric"></label>
-        </div>
-      </fieldset>
-      <label>Предупреждать за, мин <input name="warn" value="{{ rules.warn_at_minutes | join(', ') }}"></label>
-      <label>Не считать время без активности дольше, мин (0 — всегда считать)
-        <input type="number" name="idle_minutes" min="0" max="60" value="{{ rules.idle_minutes }}"></label>
-      <label class="full">Когда время вышло
-        <select name="enforcement">
+      {% endfor %}
+      <label class="label">Предупреждать за, мин <input class="input" name="warn" value="{{ rules.warn_at_minutes | join(', ') }}"></label>
+      <label class="label">Не считать время без активности дольше, мин (0 — всегда считать)
+        <input class="input" type="number" name="idle_minutes" min="0" max="60" value="{{ rules.idle_minutes }}"></label>
+      <label class="label sm:col-span-2">Когда время вышло
+        <select class="input" name="enforcement">
           <option value="logoff" {% if rules.enforcement == "logoff" %}selected{% endif %}>завершить сеанс</option>
           <option value="lock" {% if rules.enforcement == "lock" %}selected{% endif %}>вернуть на экран входа</option>
         </select></label>
-      <label class="full">Запрещённые программы: по одной в строке, можно со звёздочкой (Minecraft*)
-        <textarea name="blocked_apps" rows="4">{{ rules.blocked_apps | join("\n") }}</textarea></label>
+      <label class="label sm:col-span-2">Запрещённые программы: по одной в строке, можно со звёздочкой (Minecraft*)
+        <textarea class="input font-mono text-sm" name="blocked_apps" rows="4">{{ rules.blocked_apps | join("\n") }}</textarea></label>
     </div>
-    <div class="form-foot">
-      <button class="primary">Сохранить правила</button>
-      <span class="muted small">Версия {{ device.rules_version }}. Компьютер получит правила в течение 15 секунд.</span>
+    <div class="mt-5 flex flex-wrap items-center gap-3">
+      <button class="btn btn-primary">Сохранить правила</button>
+      <span class="text-xs text-zinc-500">Версия {{ device.rules_version }}. Компьютер получит правила в течение 15 секунд.</span>
     </div>
   </form>
 </section>
 
-<section class="card" id="log">
-  <div class="toolbar">
-    <h2>Журнал</h2>
-    <form method="get" action="/devices/{{ device.id }}#log" class="inline">
-      <select name="kind" onchange="this.form.submit()" aria-label="Тип событий">
+<section class="card mt-4" id="log">
+  <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <h2 class="text-base font-semibold">Журнал</h2>
+    <form method="get" action="/devices/{{ device.id }}#log">
+      <select class="input mt-0 w-auto py-1.5 text-sm" name="kind" onchange="this.form.submit()" aria-label="Тип событий">
         <option value="">Все события</option>
         {% for k, label in kinds.items() %}<option value="{{ k }}" {% if k == kind %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </form>
   </div>
-  <ul class="log">
+  <ul class="space-y-1">
   {% for e in events %}
     {% set text = event_text(e.kind, e.data) %}
-    <li class="{{ 'alert' if e.kind in alert_kinds else '' }}">
-      <span class="ico">{{ icon(event_icon(e.kind)) }}</span>
-      <span class="what"><b>{{ event_label(e.kind) }}</b>{% if text %}<span>{{ text }}</span>{% endif %}</span>
-      <time datetime="{{ e.ts.isoformat() }}">{{ local_time(e.ts, "%d.%m %H:%M") }}</time>
+    {% set alert = e.kind in alert_kinds %}
+    <li class="grid grid-cols-[28px_1fr_auto] items-start gap-3 rounded-xl px-2 py-2.5 {{ 'bg-amber-50 dark:bg-amber-400/10' if alert else '' }}">
+      <span class="grid size-7 place-items-center rounded-lg {{ 'bg-amber-200/70 text-amber-800 dark:bg-amber-400/20 dark:text-amber-300' if alert else 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' }}">{{ icon(event_icon(e.kind), "size-4") }}</span>
+      <span class="min-w-0">
+        <b class="block text-sm font-semibold">{{ event_label(e.kind) }}</b>
+        {% if text %}<span class="block text-sm break-words text-zinc-600 dark:text-zinc-400">{{ text }}</span>{% endif %}
+      </span>
+      <time class="text-xs whitespace-nowrap text-zinc-500 tabular-nums" datetime="{{ e.ts.isoformat() }}">{{ local_time(e.ts, "%d.%m %H:%M") }}</time>
     </li>
   {% else %}
-    <li><span></span><span class="muted">Пока пусто.</span><span></span></li>
+    <li class="px-2 py-3 text-sm text-zinc-500">Пока пусто.</li>
   {% endfor %}
   </ul>
 </section>
 
-<section class="card">
-  <h2>Устройство</h2>
-  <div class="row" style="flex-wrap:wrap; align-items:flex-start">
-    <form method="post" action="/devices/{{ device.id }}/rename" class="inline">
+<section class="card mt-4">
+  <h2 class="card-title">Устройство</h2>
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <form method="post" action="/devices/{{ device.id }}/rename" class="flex flex-wrap items-center gap-2">
       <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
-      <input name="name" value="{{ device.name }}" maxlength="100" aria-label="Название">
-      <button>Переименовать</button>
+      <input class="input mt-0 w-56" name="name" value="{{ device.name }}" maxlength="100" aria-label="Название">
+      <button class="btn">Переименовать</button>
     </form>
-    <form method="post" action="/devices/{{ device.id }}/delete" class="inline"
+    <form method="post" action="/devices/{{ device.id }}/delete"
           onsubmit="return confirm('Удалить устройство и всю его историю? Агент на нём больше не сможет подключиться.')">
       <input type="hidden" name="csrf" value="{{ csrf_token(request) }}">
-      <button class="danger">Удалить устройство</button>
+      <button class="btn btn-danger">Удалить устройство</button>
     </form>
   </div>
 </section>

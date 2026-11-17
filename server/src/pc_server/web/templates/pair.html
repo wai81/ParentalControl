@@ -1,33 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Подключение компьютера{% endblock %}
 {% block content %}
-<a class="back" href="/">{{ icon("back") }}Все компьютеры</a>
-<section class="card" style="max-width:720px">
-  <h1>Подключение компьютера</h1>
-  <p class="muted">Код одноразовый и действует до {{ local_time(code.expires_at, "%H:%M") }}.</p>
-  <div aria-label="Код подключения" class="code">{{ code.code }}</div>
-  <ol class="steps">
+<a href="/" class="mb-2 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-brand hover:no-underline dark:text-zinc-400">{{ icon("back", "size-4") }}Все компьютеры</a>
+<section class="card max-w-2xl p-6">
+  <h1 class="text-2xl font-bold tracking-tight">Подключение компьютера</h1>
+  <p class="mt-1 text-sm text-zinc-500">Код одноразовый и действует до {{ local_time(code.expires_at, "%H:%M") }}.</p>
+  <div aria-label="Код подключения" class="code my-5 rounded-2xl bg-zinc-100 py-5 text-center font-mono text-4xl font-bold tracking-[0.2em] dark:bg-zinc-800">{{ code.code }}</div>
+  <ol class="list-decimal space-y-2 pl-5 text-sm">
     <li>На компьютере ребёнка должен быть установлен агент (файл INSTALL.txt в архиве агента).</li>
     <li>Откройте там PowerShell <b>от имени администратора</b> и выполните команду. Название в кавычках можно изменить.</li>
   </ol>
-  <div class="cmd">
-    <pre id="cmd">&amp; "C:\Program Files\ParentalControl\agent\pcagent.exe" connect --server {{ server_url }} --code {{ code.code }} --name "Компьютер ребёнка"</pre>
-    <button type="button" id="copy">{{ icon("copy") }}<span>Копировать команду</span></button>
-  </div>
-  <script>
-    // navigator.clipboard needs https; on http://192.168.x.x fall back to selecting the text.
-    document.getElementById("copy").addEventListener("click", async (event) => {
-      const button = event.currentTarget, pre = document.getElementById("cmd");
-      let copied = false;
-      try { await navigator.clipboard.writeText(pre.innerText); copied = true; } catch (e) {}
-      if (!copied) {
-        const range = document.createRange(); range.selectNodeContents(pre);
-        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
-        copied = document.execCommand("copy");
-      }
-      button.lastElementChild.textContent = copied ? "Скопировано" : "Выделено: нажмите Ctrl+C";
-    });
-  </script>
-  <p class="muted small" style="margin-top:16px">Через несколько секунд после команды компьютер появится в списке «в сети».</p>
+  <pre id="cmd" class="mt-4 rounded-xl bg-zinc-950 p-4 font-mono text-[13px] leading-relaxed break-all whitespace-pre-wrap text-zinc-100 dark:bg-black">&amp; "C:\Program Files\ParentalControl\agent\pcagent.exe" connect --server {{ server_url }} --code {{ code.code }} --name "Компьютер ребёнка"</pre>
+  <button type="button" id="copy" class="btn mt-3">{{ icon("copy", "size-4") }}<span>Копировать команду</span></button>
+  <p class="mt-5 text-xs text-zinc-500">Через несколько секунд после команды компьютер появится в списке «в сети».</p>
 </section>
+<script>
+  // navigator.clipboard needs https; on http://192.168.x.x fall back to selecting the text.
+  document.getElementById("copy").addEventListener("click", async (event) => {
+    const button = event.currentTarget, pre = document.getElementById("cmd");
+    let copied = false;
+    try { await navigator.clipboard.writeText(pre.innerText); copied = true; } catch (e) {}
+    if (!copied) {
+      const range = document.createRange(); range.selectNodeContents(pre);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      copied = document.execCommand("copy");
+    }
+    button.lastElementChild.textContent = copied ? "Скопировано" : "Выделено: нажмите Ctrl+C";
+  });
+</script>
 {% endblock %}

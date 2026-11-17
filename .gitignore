@@ -40,3 +40,6 @@ Thumbs.db
 desktop.ini
 .DS_Store
 devdata/
+
+# Tailwind build tooling
+node_modules/

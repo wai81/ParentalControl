@@ -54,7 +54,7 @@ async def test_device_list_and_page(client: AsyncClient, db_session):
     await db_session.commit()
     await login(client, db_session)
     page = await client.get("/")
-    assert "Компьютер Маши" in page.text and "1 ч 15 мин <span class=\"unit\">осталось" in page.text
+    assert "Компьютер Маши" in page.text and "1 ч 15 мин" in page.text and "осталось" in page.text
     assert 'style="width: 37.5%"' in page.text  # meter: 45 of 120 minutes used
     page = await client.get(f"/devices/{device.id}")
     assert page.status_code == 200 and "minecraft.exe" in page.text
@@ -109,7 +109,7 @@ async def test_save_rules(client: AsyncClient, db_session):
 async def test_pairing_page_shows_code(client: AsyncClient, db_session):
     csrf = await login(client, db_session)
     r = await client.post("/devices/pair", data={"csrf": csrf})
-    code = re.search(r'class="code">(\d{8})<', r.text).group(1)
+    code = re.search(r'class="code[^"]*">(\d{8})<', r.text).group(1)
     assert f"--code {code}" in r.text and "--server http://test" in r.text
 
 

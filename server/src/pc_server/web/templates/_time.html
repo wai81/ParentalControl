@@ -3,32 +3,44 @@
 {% macro time_left(s, big=True) -%}
   {% set m = meter(s) %}
   {% if s.blocked %}
-    <div class="headline blocked">{{ icon("lock") }} Заблокировано до конца дня</div>
+    <div class="mt-3 flex items-center gap-2 text-lg font-bold text-crit dark:text-red-400">{{ icon("lock") }} Заблокировано до конца дня</div>
   {% elif not s.allowed %}
-    <div class="headline blocked">{{ icon("clock") }} {{ s.reason or "Сейчас нельзя" }}</div>
+    <div class="mt-3 flex items-start gap-2 text-lg font-bold text-crit dark:text-red-400">{{ icon("clock", "icon mt-1") }} {{ s.reason or "Сейчас нельзя" }}</div>
   {% else %}
-    <div class="headline {{ '' if big else 'small-head' }}">{{ minutes(s.remaining_minutes) }} <span class="unit">осталось</span></div>
+    <div class="mt-3 font-bold tracking-tight {{ 'text-4xl' if big else 'text-3xl' }}">
+      {{ minutes(s.remaining_minutes) }} <span class="text-base font-medium tracking-normal text-zinc-500 dark:text-zinc-400">осталось</span>
+    </div>
   {% endif %}
-  <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="{{ s.limit_minutes|round|int }}"
-       aria-valuenow="{{ s.used_minutes|round|int }}" aria-label="Использовано за сегодня">
-    <span class="{{ m.level }}" style="width: {{ m.pct }}%"></span>
+  <div class="mt-3 h-2.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800" role="meter"
+       aria-valuemin="0" aria-valuemax="{{ s.limit_minutes|round|int }}" aria-valuenow="{{ s.used_minutes|round|int }}"
+       aria-label="Использовано за сегодня">
+    <div class="h-full min-w-1 rounded-full {% if m.level == 'good' %}bg-good{% elif m.level == 'warning' %}bg-warn{% else %}bg-crit{% endif %}"
+         style="width: {{ m.pct }}%"></div>
   </div>
-  <div class="meter-legend">
+  <div class="mt-1.5 flex justify-between gap-3 text-sm text-zinc-500 dark:text-zinc-400">
     <span>{{ minutes(s.used_minutes) }} из {{ minutes(s.limit_minutes) }}</span>
-    <span class="nowrap" title="Разрешённые часы">{{ icon("clock") }} {{ s.window }}</span>
+    <span class="inline-flex items-center gap-1 whitespace-nowrap" title="Разрешённые часы">{{ icon("clock", "size-3.5") }}{{ s.window }}</span>
   </div>
 {%- endmacro %}
 
 {% macro now_line(s) -%}
-  <div class="now">
+  <div class="mt-3 flex min-w-0 items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
   {% if not s.child_logged_in %}
     {{ icon("moon") }}<span>Ребёнок не вошёл в систему</span>
   {% elif s.idle %}
     {{ icon("moon") }}<span>Не за компьютером: нет активности</span>
   {% elif s.app %}
-    {{ icon("window") }}<span class="title"><b>{{ s.app }}</b>{% if s.title %} · {{ s.title }}{% endif %}</span>
+    {{ icon("window") }}<span class="min-w-0 truncate"><b class="font-semibold text-zinc-900 dark:text-zinc-100">{{ s.app }}</b>{% if s.title %} · {{ s.title }}{% endif %}</span>
   {% else %}
     {{ icon("monitor") }}<span>Ребёнок за компьютером</span>
   {% endif %}
   </div>
+{%- endmacro %}
+
+{% macro online_pill(device) -%}
+  {% if is_online(device) %}
+    <span class="pill bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><span class="size-2 rounded-full bg-good"></span>в сети</span>
+  {% else %}
+    <span class="pill"><span class="size-2 rounded-full bg-zinc-400"></span>не в сети</span>
+  {% endif %}
 {%- endmacro %}

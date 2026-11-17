@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import io
 import re
+import shutil
+import subprocess
 import tarfile
 import time
 from pathlib import Path
@@ -50,7 +52,20 @@ def files() -> list[Path]:
     return result
 
 
+def build_css() -> None:
+    """Rebuild the Tailwind CSS so the package never ships a stale app.css."""
+    npm = shutil.which("npm")
+    if npm is None:
+        print("npm not found: packing the committed app.css as is")
+        return
+    server = ROOT / "server"
+    if not (server / "node_modules").exists():
+        subprocess.run([npm, "ci"], cwd=server, check=True)
+    subprocess.run([npm, "run", "build:css"], cwd=server, check=True)
+
+
 def main() -> Path:
+    build_css()
     name = f"pc-server-{version()}"
     target = ROOT / "dist" / f"{name}.tar.gz"
     target.parent.mkdir(exist_ok=True)
